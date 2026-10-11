@@ -1,58 +1,59 @@
 import { api } from '../api.js';
 import { disablePush, enablePush, isIos, isStandalone, pushStatus } from '../push.js';
 import { isAdmin, state } from '../state.js';
-import { el, html, icon, toast } from '../ui.js';
+import { el, html, toast } from '../ui.js';
 
 const STATUS_TEXT = {
-  on: 'Activadas en este dispositivo',
-  off: 'Desactivadas en este dispositivo',
-  denied: 'Bloqueadas. Permítelas en los ajustes del navegador.',
-  'needs-install': 'En iPhone primero instala la app (abajo).',
-  unsupported: 'Este navegador no permite notificaciones.',
+  on: 'Activados en este dispositivo.',
+  off: 'Desactivados en este dispositivo.',
+  denied: 'Bloqueados. Permítelos en los ajustes del navegador.',
+  'needs-install': 'En iPhone, primero instala la app (abajo).',
+  unsupported: 'Este navegador no permite avisos.',
 };
 
 export function settingsView(main, _params, { onLogout }) {
   const ios = isIos();
   main.replaceChildren(
     el(html`<div>
-      <header class="topbar">
-        <button class="icon-btn back" data-act="back" aria-label="Volver">${icon('back')}</button>
-        <h1>Ajustes</h1>
+      <header class="bar">
+        <button class="txt-btn" data-act="back">← Volver</button>
+        <span class="grow"></span>
       </header>
       <div class="page">
-        <div class="card">
-          <div class="row">
-            ${icon('bell')}
-            <div class="grow">Notificaciones<small data-slot="push-status">…</small></div>
-            <input type="checkbox" class="toggle" data-act="push" aria-label="Notificaciones" disabled />
-          </div>
-        </div>
+        <section class="section">
+          <header><span class="num">01</span><h3>Avisos</h3></header>
+          <label class="row">
+            <span class="grow">Avisos en este teléfono<small data-slot="push-status">…</small></span>
+            <input type="checkbox" class="switch" data-act="push" aria-label="Avisos" disabled />
+          </label>
+        </section>
 
         ${isStandalone()
           ? ''
-          : html`<div class="card">
-              <h3>Instalar la app</h3>
+          : html`<section class="section">
+              <header><span class="num">02</span><h3>Instalar</h3></header>
               <p>${ios
-                ? html`En Safari toca ${icon('share', 'xs')} <b>Compartir</b> y luego <b>Agregar a inicio</b>. Ábrela desde el ícono para recibir notificaciones.`
-                : html`En el menú del navegador (⋮) elige <b>Instalar app</b> o <b>Agregar a pantalla de inicio</b>.`}</p>
-            </div>`}
+                ? 'En Safari toca Compartir y luego «Agregar a inicio». Ábrela desde el ícono para recibir avisos.'
+                : 'En el menú del navegador (⋮) elige «Instalar app» o «Agregar a pantalla de inicio».'}</p>
+            </section>`}
 
-        <div class="card">
-          <h3>Cambiar contraseña</h3>
+        <section class="section">
+          <header><span class="num">${isStandalone() ? '02' : '03'}</span><h3>Contraseña</h3></header>
           <form data-slot="password" novalidate>
-            <label class="field"><span>Contraseña actual</span><input class="input" type="password" name="current" autocomplete="current-password" /></label>
-            <label class="field"><span>Nueva contraseña</span><input class="input" type="password" name="next" autocomplete="new-password" placeholder="Mínimo 6 caracteres" /></label>
-            <div class="form-error"></div>
-            <button class="btn small" type="submit">${icon('key', 'sm')} Guardar</button>
+            <label class="field"><span>Actual</span><input class="input" type="password" name="current" autocomplete="current-password" /></label>
+            <label class="field"><span>Nueva</span><input class="input" type="password" name="next" autocomplete="new-password" placeholder="mínimo 6 caracteres" /></label>
+            <div class="error"></div>
+            <button class="btn small" type="submit">Guardar</button>
           </form>
-        </div>
+          <div style="height:18px"></div>
+        </section>
 
-        <div class="card">
-          ${isAdmin() ? html`<a class="row row-link" href="#/admin">${icon('shield')}<span class="grow">Panel de administración<small>Invitaciones, usuarios y ajustes</small></span></a>` : ''}
-          <button class="row row-link" data-act="logout">${icon('logout')}<span class="grow">Cerrar sesión<small>@${state.me.username}</small></span></button>
-        </div>
+        <section class="section">
+          ${isAdmin() ? html`<a class="row row-link" href="#/admin"><span class="grow">Administración<small>Invitaciones, personas y protección</small></span>→</a>` : ''}
+          <button class="row row-link" data-act="logout"><span class="grow">Cerrar sesión<small>${state.me.username}</small></span>→</button>
+        </section>
 
-        <div class="notice">${icon('lock', 'xs')} mi nopor · privado y solo por invitación</div>
+        <div class="end">mi nopor · privado</div>
       </div>
     </div>`),
   );
@@ -72,7 +73,7 @@ export function settingsView(main, _params, { onLogout }) {
     try {
       if (toggle.checked) {
         await enablePush();
-        toast('Notificaciones activadas');
+        toast('Avisos activados');
       } else {
         await disablePush();
       }
@@ -86,7 +87,7 @@ export function settingsView(main, _params, { onLogout }) {
   const form = main.querySelector('[data-slot="password"]');
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const error = form.querySelector('.form-error');
+    const error = form.querySelector('.error');
     error.textContent = '';
     try {
       await api.post('/api/auth/password', Object.fromEntries(new FormData(form)));

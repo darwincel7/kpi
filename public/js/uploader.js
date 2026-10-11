@@ -2,7 +2,7 @@
 // archivo se envía en partes y se reintenta solo si se corta la conexión.
 import { api, ApiError } from './api.js';
 import { emit } from './state.js';
-import { el, formatBytes, html, icon, toast } from './ui.js';
+import { el, formatBytes, html, toast } from './ui.js';
 
 let job = null;
 let wakeLock = null;
@@ -106,7 +106,7 @@ async function run() {
     const { post } = await api.post('/api/posts', { caption: job.caption, uploadIds: job.items.map((i) => i.uploadId) });
     job = null;
     render();
-    toast('¡Publicado! Ya les avisamos a todos.');
+    toast('Publicado. Ya les avisamos a todos.');
     emit('posted', post);
   } catch (err) {
     if (!job) return;
@@ -147,24 +147,24 @@ function draw() {
   const n = job.items.length;
   let title;
   let sub;
-  let action = html`<button class="icon-btn" data-act="cancel" aria-label="Cancelar">${icon('x', 'sm')}</button>`;
+  let action = html`<button class="txt-btn" data-act="cancel">Cancelar</button>`;
   if (job.status === 'uploading') {
-    title = n > 1 ? `Subiendo ${job.index + 1} de ${n} · ${pct}%` : `Subiendo · ${pct}%`;
+    title = n > 1 ? `Subiendo ${job.index + 1}/${n} — ${pct}%` : `Subiendo — ${pct}%`;
     sub = `${formatBytes(loaded)} de ${formatBytes(job.total)} · no cierres la app`;
   } else if (job.status === 'publishing') {
-    title = 'Procesando…';
-    sub = 'Preparando tu publicación';
-    action = html`<div class="spinner inline"></div>`;
+    title = 'Revelando…';
+    sub = 'Preparando la publicación';
+    action = '';
   } else {
     title = 'No se pudo subir';
     sub = job.error;
-    action = html`<button class="btn small primary" data-act="retry">${icon('refresh', 'sm')} Reintentar</button>
-      <button class="icon-btn" data-act="cancel" aria-label="Cancelar">${icon('x', 'sm')}</button>`;
+    action = html`<button class="txt-btn" data-act="retry" style="color:var(--paper)">Reintentar</button>
+      <button class="txt-btn" data-act="cancel">Cancelar</button>`;
   }
   bar.replaceChildren(
     el(html`<div>
-      <div class="row"><div class="txt">${title}<small>${sub}</small></div>${action}</div>
-      <div class="bar"><i style="width:${job.status === 'publishing' ? 100 : pct}%"></i></div>
+      <div class="row"><div class="grow">${title}<small>${sub}</small></div>${action}</div>
+      <div class="line"><i style="width:${job.status === 'publishing' ? 100 : pct}%"></i></div>
     </div>`),
   );
   bar.querySelector('[data-act="cancel"]')?.addEventListener('click', cancel);

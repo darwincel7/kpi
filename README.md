@@ -12,18 +12,25 @@ Red social privada para compartir fotos y videos entre pocas personas. Contenido
 - **Panel de administración:** enlace de invitación (se puede cambiar), cerrar el registro, que solo los admins publiquen, marca de agua, usuarios (hacer admin, bloquear, eliminar) y espacio usado.
 - Se instala en el teléfono como una app.
 
+## Roles
+
+- **Dueño:** la primera cuenta que se crea. Es el único que puede nombrar o quitar administradores, y nadie puede bloquear, borrar ni cambiar su cuenta.
+- **Administradores:** solo los que nombre el dueño. Ven el botón «Descargar» (el original, sin recomprimir) y el panel de administración.
+- **Miembros:** todos los demás. Pueden ver, dar me gusta y comentar, pero no descargar.
+
 ## Protección del contenido: qué hace y qué no
 
-Para los miembros que no son administradores, la app:
+Para quien no es administrador, la app:
 
-- Muestra el letrero «No descargable» en cada foto y video, y un aviso en la página.
-- Bloquea el menú «Guardar imagen» (clic derecho o mantener presionado), arrastrar la imagen y el botón de descarga del reproductor de video.
-- Bloquea abrir el archivo directamente en otra pestaña para guardarlo.
-- Pone una **marca de agua con el usuario de quien está mirando**. Si alguien hace una captura y la comparte, se sabe quién fue.
-- De las fotos nunca entrega el original, sino una versión para ver de 2560 px, nítida y sin la ubicación GPS. Los videos se reproducen en su calidad original.
+- **Mantener presionado para ver** (se puede apagar en el panel): las fotos y videos se ven borrosos hasta que se mantienen presionados, así una captura casual sale borrosa. Los videos solo se reproducen mientras se mantiene presionado.
+- **Oculta todo** en cuanto la app pierde el foco o pasa a segundo plano. Así la vista previa del selector de apps y muchas herramientas de recorte en computadora no captan nada.
+- **Tapa la pantalla** al detectar los atajos de captura de Windows y Mac (Imprimir Pantalla, Win+Shift+S, Cmd+Shift+3/4/5) y bloquea imprimir la página.
+- **Marca de agua en movimiento** con el usuario, su número de cuenta y la fecha. Si alguien fotografía la pantalla, se sabe de qué cuenta salió.
+- Muestra el letrero «No descargable» y bloquea «Guardar imagen», arrastrar, el reproductor nativo (sin pantalla completa, sin imagen en imagen, sin botón de descarga) y abrir el archivo directamente en otra pestaña.
+- De las fotos nunca entrega el original, sino una versión de 2560 px, nítida y sin ubicación GPS.
 - Nada es público: sin iniciar sesión no se ve ni se descarga nada.
 
-**Importante:** ninguna app web puede impedir del todo las capturas de pantalla, que graben la pantalla o que fotografíen el teléfono con otro. Estas medidas lo dificultan y desaniman, y la marca de agua ayuda a saber quién filtró algo. Invita solo a personas de confianza.
+**Importante:** ninguna página web puede impedir del todo una captura o grabación de pantalla en el teléfono. La hace el sistema operativo, por fuera del navegador, y no avisa a la página. Estas medidas la dificultan y desaniman, y la marca de agua permite saber quién filtró algo. Para bloquearlas de verdad hace falta una app nativa: en Android, una app instalable con la protección del sistema (`FLAG_SECURE`) hace que capturas y grabaciones salgan en negro. En iPhone, ni las apps nativas pueden impedir una captura; solo pueden detectarla y ocultar el contenido mientras se graba.
 
 ## Publicarla en internet
 

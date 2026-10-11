@@ -1,25 +1,26 @@
-import { canUpload } from '../state.js';
-import { el, formatBytes, html, icon, toast } from '../ui.js';
+import { canUpload, isAdmin } from '../state.js';
+import { el, formatBytes, html, pad2, toast } from '../ui.js';
 import { isBusy, startUpload } from '../uploader.js';
 
 const MAX_FILES = 20;
+const VIDEO_EXT = /\.(mov|mp4|m4v|webm)$/i;
 
 export function uploadView(main) {
-  const top = html`<header class="topbar">
-    <a class="icon-btn back" href="#/" aria-label="Cerrar">${icon('x')}</a>
+  const top = html`<header class="bar">
     <h1>Nueva publicación</h1>
+    <a class="txt-btn" href="#/">Cerrar</a>
   </header>`;
 
   if (!canUpload()) {
     main.replaceChildren(
-      el(html`<div>${top}<div class="empty"><div class="big-ico">${icon('lock')}</div><h3>Solo administradores</h3>
-        <p>Por ahora solo los administradores pueden publicar.</p></div></div>`),
+      el(html`<div>${top}<div class="empty"><h3>Por ahora solo publican los administradores.</h3>
+        <p>Puedes ver, dar me gusta y comentar.</p></div></div>`),
     );
     return;
   }
   if (isBusy()) {
     main.replaceChildren(
-      el(html`<div>${top}<div class="empty"><div class="big-ico">${icon('upload')}</div><h3>Ya hay una subida en curso</h3>
+      el(html`<div>${top}<div class="empty"><h3>Ya hay algo subiendo.</h3>
         <p>Espera a que termine para publicar otra cosa.</p><a class="btn" href="#/">Ver inicio</a></div></div>`),
     );
     return;
@@ -30,20 +31,21 @@ export function uploadView(main) {
   main.replaceChildren(
     el(html`<div>
       ${top}
-      <div class="composer">
+      <div class="compose">
         <input type="file" accept="image/*,video/*" multiple hidden />
         <button class="picker" data-act="pick">
-          <span class="big">${icon('plus')}</span>
-          <strong>Elegir fotos y videos</strong>
-          <span>Se suben en su calidad original</span>
+          <strong>Elige fotos o videos</strong>
+          <span>Calidad original · hasta ${MAX_FILES} por publicación</span>
         </button>
         <div class="previews" hidden></div>
-        <label class="field"><span>Descripción</span>
-          <textarea class="input" name="caption" maxlength="2000" placeholder="Escribe algo… (opcional)"></textarea>
+        <label class="field"><span>Texto (opcional)</span>
+          <textarea class="input" name="caption" maxlength="2000" placeholder="Escribe algo…"></textarea>
         </label>
-        <div class="hint">${icon('bell', 'sm')}<span>Cuando publiques, todos recibirán una notificación.</span></div>
-        <div class="hint">${icon('lock', 'sm')}<span>Los demás podrán verlo pero no descargarlo. Solo los administradores pueden descargar los originales.</span></div>
-        <button class="btn primary block" data-act="publish" disabled>Publicar</button>
+        <ul class="notes">
+          <li>Todos recibirán un aviso cuando publiques.</li>
+          <li>${isAdmin() ? 'Nadie más que los administradores puede descargar el original.' : 'Nadie podrá descargarlo.'}</li>
+        </ul>
+        <button class="btn solid block" data-act="publish" disabled>Publicar</button>
       </div>
     </div>`),
   );
@@ -52,9 +54,10 @@ export function uploadView(main) {
   const picker = main.querySelector('.picker');
   const previews = main.querySelector('.previews');
   const publish = main.querySelector('[data-act="publish"]');
+  const isVideo = (f) => f.type.startsWith('video/') || VIDEO_EXT.test(f.name);
 
   function addFiles(list) {
-    const accepted = [...list].filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/') || /\.(heic|heif|mov|mp4|m4v|webm)$/i.test(f.name));
+    const accepted = [...list].filter((f) => f.type.startsWith('image/') || isVideo(f) || /\.(heic|heif)$/i.test(f.name));
     if (accepted.length < list.length) toast('Algunos archivos no son fotos ni videos', { error: true });
     files = [...files, ...accepted].slice(0, MAX_FILES);
     if (files.length === MAX_FILES) toast(`Máximo ${MAX_FILES} archivos por publicación`);
@@ -65,15 +68,15 @@ export function uploadView(main) {
     picker.hidden = files.length > 0;
     previews.hidden = files.length === 0;
     publish.disabled = files.length === 0;
-    publish.textContent = files.length > 1 ? `Publicar ${files.length} archivos` : 'Publicar';
+    publish.textContent = files.length > 1 ? `Publicar ${files.length}` : 'Publicar';
     previews.replaceChildren(
       ...files.map((f, i) => {
         if (!urls.has(f)) urls.set(f, URL.createObjectURL(f));
-        const isVideo = f.type.startsWith('video/') || /\.(mov|mp4|m4v|webm)$/i.test(f.name);
         const node = el(html`<div class="tile">
-          ${isVideo ? html`<video src="${urls.get(f)}#t=0.1" muted playsinline preload="metadata"></video><span class="kind">${icon('play', 'sm')}</span>` : html`<img src="${urls.get(f)}" alt="" />`}
-          <span class="pill size">${formatBytes(f.size)}</span>
-          <button class="remove" aria-label="Quitar">${icon('x', 'xs')}</button>
+          ${isVideo(f) ? html`<video src="${urls.get(f)}#t=0.1" muted playsinline preload="metadata"></video>` : html`<img src="${urls.get(f)}" alt="" />`}
+          <span class="num">${pad2(i + 1)}${isVideo(f) ? ' · video' : ''}</span>
+          <span class="size">${formatBytes(f.size)}</span>
+          <button class="remove" aria-label="Quitar">×</button>
         </div>`);
         node.querySelector('.remove').addEventListener('click', () => {
           URL.revokeObjectURL(urls.get(f));
@@ -83,7 +86,7 @@ export function uploadView(main) {
         });
         return node;
       }),
-      ...(files.length < MAX_FILES ? [el(html`<button class="add" aria-label="Agregar más">${icon('plus')}</button>`)] : []),
+      ...(files.length < MAX_FILES ? [el('<button class="add" aria-label="Agregar más">+</button>')] : []),
     );
     previews.querySelector('.add')?.addEventListener('click', () => input.click());
   }

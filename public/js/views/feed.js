@@ -1,22 +1,25 @@
 import { api } from '../api.js';
 import { enablePush, isIos, isStandalone, pushStatus } from '../push.js';
 import { canUpload, on, state, storageGet, storageSet } from '../state.js';
-import { el, html, icon, toast } from '../ui.js';
+import { el, html, toast } from '../ui.js';
 import { postCard, postTile } from './post-card.js';
+
+const loading = () => el('<div class="loading">Revelando…</div>');
 
 // Lista paginada de publicaciones, como lista o cuadrícula. También la usa el perfil.
 export function postList(container, { user, mode = 'list', emptyNode }) {
   let cursor = null;
-  let loading = false;
+  let busy = false;
   let done = false;
   let topId = 0;
   const holder = el(mode === 'grid' ? '<div class="grid"></div>' : '<div class="feed"></div>');
-  const sentinel = el('<div><div class="spinner"></div></div>');
+  const sentinel = el('<div></div>');
+  sentinel.append(loading());
   container.replaceChildren(holder, sentinel);
 
   async function loadMore() {
-    if (loading || done) return;
-    loading = true;
+    if (busy || done) return;
+    busy = true;
     try {
       const qs = new URLSearchParams();
       if (cursor) qs.set('before', cursor);
@@ -29,18 +32,16 @@ export function postList(container, { user, mode = 'list', emptyNode }) {
       if (done) {
         sentinel.replaceChildren();
         if (!holder.children.length && emptyNode) sentinel.append(emptyNode);
-        else if (mode === 'list' && holder.children.length) {
-          sentinel.append(el(html`<div class="notice">${icon('lock', 'xs')} Contenido privado. Prohibido descargar, grabar o compartir.</div>`));
-        }
+        else if (mode === 'list' && holder.children.length) sentinel.append(el('<div class="end">— Fin del rollo —</div>'));
       }
     } catch (err) {
       sentinel.replaceChildren(el(html`<div class="empty"><p>${err.message}</p><button class="btn small">Reintentar</button></div>`));
       sentinel.querySelector('button').addEventListener('click', () => {
-        sentinel.replaceChildren(el('<div class="spinner"></div>'));
+        sentinel.replaceChildren(loading());
         loadMore();
       });
     } finally {
-      loading = false;
+      busy = false;
     }
   }
 
@@ -60,11 +61,11 @@ async function pushBanner(slot) {
   const status = await pushStatus();
   let node;
   if (status === 'off') {
-    node = el(html`<div class="banner">${icon('bell')}<div class="txt"><b>Activa las notificaciones</b><span>Entérate cuando alguien suba algo.</span></div>
-      <button class="btn small primary" data-act="on">Activar</button><button class="icon-btn" data-act="x" aria-label="Cerrar">${icon('x', 'sm')}</button></div>`);
+    node = el(html`<div class="banner"><span class="grow">Activa los avisos para saber cuándo alguien sube algo.</span>
+      <button data-act="on">Activar</button><button data-act="x" aria-label="Cerrar">×</button></div>`);
   } else if (status === 'needs-install' && isIos() && !isStandalone()) {
-    node = el(html`<div class="banner">${icon('phone')}<div class="txt"><b>Instala la app en tu iPhone</b><span>Toca ${icon('share', 'xs')} Compartir y luego «Agregar a inicio» para recibir avisos.</span></div>
-      <button class="icon-btn" data-act="x" aria-label="Cerrar">${icon('x', 'sm')}</button></div>`);
+    node = el(html`<div class="banner"><span class="grow">En iPhone, toca Compartir y luego «Agregar a inicio» para recibir avisos.</span>
+      <button data-act="x" aria-label="Cerrar">×</button></div>`);
   } else return;
   slot.replaceChildren(node);
   node.querySelector('[data-act="x"]').addEventListener('click', () => {
@@ -74,7 +75,7 @@ async function pushBanner(slot) {
   node.querySelector('[data-act="on"]')?.addEventListener('click', async () => {
     try {
       await enablePush();
-      toast('Notificaciones activadas');
+      toast('Avisos activados');
       node.remove();
     } catch (err) {
       toast(err.message, { error: true });
@@ -86,10 +87,10 @@ export function feedView(main) {
   let mode = storageGet('feedMode', 'list');
   main.replaceChildren(
     el(html`<div>
-      <header class="topbar">
-        <a href="#/" class="logo" data-act="top">mi <b>nopor</b></a>
-        <span class="spacer"></span>
-        <button class="icon-btn" data-act="mode" aria-label="Cambiar vista"></button>
+      <header class="bar">
+        <a href="#/" class="mark" data-act="top">mi nopor<i></i></a>
+        <span class="grow"></span>
+        <button class="txt-btn" data-act="mode"></button>
       </header>
       <div data-slot="banner"></div>
       <div data-slot="list"></div>
@@ -98,21 +99,20 @@ export function feedView(main) {
   const modeBtn = main.querySelector('[data-act="mode"]');
   const slot = main.querySelector('[data-slot="list"]');
   let list;
-  let pill;
+  let fresh;
 
   const empty = () =>
     el(html`<div class="empty">
-      <div class="big-ico">${icon('image')}</div>
-      <h3>Todavía no hay nada</h3>
-      <p>${canUpload() ? 'Sube la primera foto o video.' : 'Cuando alguien publique, te avisamos.'}</p>
-      ${canUpload() ? html`<a class="btn primary" href="#/subir">${icon('plus', 'sm')} Subir</a>` : ''}
+      <h3>Todavía no hay nada.</h3>
+      <p>${canUpload() ? 'Sube la primera foto o video. Los demás recibirán un aviso.' : 'Cuando alguien publique, te llegará un aviso.'}</p>
+      ${canUpload() ? html`<a class="btn solid" href="#/subir">Subir</a>` : ''}
     </div>`);
 
   function load() {
-    pill?.remove();
-    pill = null;
+    fresh?.remove();
+    fresh = null;
     list?.destroy();
-    modeBtn.replaceChildren(el(String(icon(mode === 'grid' ? 'list' : 'grid'))));
+    modeBtn.textContent = mode === 'grid' ? 'Lista' : 'Cuadrícula';
     list = postList(slot, { mode, emptyNode: empty() });
   }
 
@@ -135,13 +135,13 @@ export function feedView(main) {
     load();
   });
   const offUnread = on('unread', () => {
-    if (pill || !list.topId || state.latestPostId <= list.topId) return;
-    pill = el(html`<button class="new-pill">${icon('sparkle', 'sm')} Contenido nuevo</button>`);
-    pill.addEventListener('click', () => {
+    if (fresh || !list.topId || state.latestPostId <= list.topId) return;
+    fresh = el('<button class="fresh">Hay algo nuevo ↑</button>');
+    fresh.addEventListener('click', () => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       load();
     });
-    main.append(pill);
+    main.append(fresh);
   });
 
   return () => {

@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { avatar, confirmAction, el, html, icon, timeAgo, toast } from '../ui.js';
+import { confirmAction, el, html, timeAgo, toast } from '../ui.js';
 import { postCard } from './post-card.js';
 
 function back() {
@@ -7,14 +7,16 @@ function back() {
   else location.hash = '#/';
 }
 
+const commentsLabel = (n) => (n ? `${n} ${n === 1 ? 'comentario' : 'comentarios'}` : 'comentar');
+
 export async function postView(main, [id]) {
   main.replaceChildren(
     el(html`<div>
-      <header class="topbar">
-        <button class="icon-btn back" data-act="back" aria-label="Volver">${icon('back')}</button>
-        <h1>Publicación</h1>
+      <header class="bar">
+        <button class="txt-btn" data-act="back">← Volver</button>
+        <span class="grow"></span>
       </header>
-      <div data-slot="post"><div class="spinner"></div></div>
+      <div data-slot="post"><div class="loading">Revelando…</div></div>
     </div>`),
   );
   main.querySelector('[data-act="back"]').addEventListener('click', back);
@@ -25,26 +27,27 @@ export async function postView(main, [id]) {
     data = await api.get(`/api/posts/${id}`);
   } catch (err) {
     if (!slot.isConnected) return;
-    slot.replaceChildren(el(html`<div class="empty"><h3>No disponible</h3><p>${err.message}</p><a class="btn" href="#/">Ir al inicio</a></div>`));
+    slot.replaceChildren(el(html`<div class="empty"><h3>Ya no está.</h3><p>${err.message}</p><a class="btn" href="#/">Ir al inicio</a></div>`));
     return;
   }
   if (!slot.isConnected) return;
   const { post, comments } = data;
   const card = postCard(post, { detail: true, onDeleted: () => (location.hash = '#/') });
   const list = el('<div class="comments"></div>');
-  const box = el(html`<div class="comment-box">
+  const box = el(html`<div class="reply">
     <form>
       <input class="input" name="body" placeholder="Escribe un comentario…" maxlength="1000" autocomplete="off" />
-      <button class="icon-btn" type="submit" aria-label="Enviar">${icon('send')}</button>
+      <button type="submit">Enviar</button>
     </form>
   </div>`);
 
   const renderComment = (c) => {
     const node = el(html`<div class="comment">
-      <a href="#/u/${c.author.username}">${avatar(c.author, 32)}</a>
-      <div class="body"><a href="#/u/${c.author.username}"><b>${c.author.username}</b></a><span class="text">${c.body}</span>
-        <div class="muted">${timeAgo(c.createdAt)}</div></div>
-      ${c.canDelete ? html`<button class="icon-btn" aria-label="Borrar comentario">${icon('trash', 'sm')}</button>` : ''}
+      <div class="body">
+        <div class="who"><a href="#/u/${c.author.username}">${c.author.username}</a><span>${timeAgo(c.createdAt)}</span></div>
+        <span class="text">${c.body}</span>
+      </div>
+      ${c.canDelete ? html`<button aria-label="Borrar comentario">Borrar</button>` : ''}
     </div>`);
     node.querySelector('button')?.addEventListener('click', async () => {
       if (!(await confirmAction('¿Borrar comentario?', '', 'Borrar'))) return;
@@ -61,7 +64,7 @@ export async function postView(main, [id]) {
 
   const setCount = (delta) => {
     post.commentCount += delta;
-    card.querySelector('[data-comments]').textContent = post.commentCount || '';
+    card.querySelector('[data-comments]').textContent = commentsLabel(post.commentCount);
   };
 
   comments.forEach((c) => list.append(renderComment(c)));

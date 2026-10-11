@@ -1,7 +1,8 @@
 import { api } from './api.js';
 import { disablePush, syncPush } from './push.js';
 import { canUpload, emit, isAdmin, on, state } from './state.js';
-import { el, html, icon, preventSaving } from './ui.js';
+import { initProtection } from './protect.js';
+import { el, html, preventSaving } from './ui.js';
 import { isBusy } from './uploader.js';
 import { adminView } from './views/admin.js';
 import { loginView, registerView } from './views/auth.js';
@@ -25,7 +26,7 @@ const routes = [
 ];
 
 const main = document.getElementById('view');
-const tabbar = document.getElementById('tabbar');
+const nav = document.getElementById('nav');
 let cleanup = null;
 let renderId = 0;
 
@@ -59,22 +60,23 @@ function currentPath() {
   return location.hash.replace(/^#/, '') || '/';
 }
 
-function renderTabbar(active) {
+function renderNav(active) {
   if (!state.me) {
-    tabbar.hidden = true;
-    document.body.classList.add('no-tabbar');
+    nav.hidden = true;
+    document.body.classList.add('no-nav');
     return;
   }
-  tabbar.hidden = false;
-  document.body.classList.remove('no-tabbar');
-  const tab = (name, href, label, inner) =>
-    html`<a href="${href}" class="${name === active ? 'active' : ''}${name === 'create' ? ' create' : ''}" aria-label="${label}">${inner}</a>`;
-  tabbar.replaceChildren(
+  nav.hidden = false;
+  document.body.classList.remove('no-nav');
+  const tab = (name, href, label, extra = '') =>
+    html`<a href="${href}" class="${name === active ? 'on' : ''}">${label}${extra}</a>`;
+  const unread = state.unread ? html`<sup>${state.unread > 99 ? '99+' : state.unread}</sup>` : '';
+  nav.replaceChildren(
     el(html`<div class="tabs">
-      ${tab('home', '#/', 'Inicio', icon('home'))}
-      ${canUpload() ? tab('create', '#/subir', 'Subir', html`<span>${icon('plus')}</span>`) : ''}
-      ${tab('bell', '#/avisos', 'Avisos', html`${icon('bell')}${state.unread ? html`<span class="dot-badge">${state.unread > 99 ? '99+' : state.unread}</span>` : ''}`)}
-      ${tab('me', `#/u/${state.me.username}`, 'Perfil', icon('user'))}
+      ${tab('home', '#/', 'Inicio')}
+      ${canUpload() ? tab('create', '#/subir', 'Subir') : ''}
+      ${tab('bell', '#/avisos', 'Avisos', unread)}
+      ${tab('me', `#/u/${state.me.username}`, 'Yo')}
     </div>`),
   );
 }
@@ -102,7 +104,7 @@ async function render() {
   if (typeof cleanup === 'function') cleanup();
   cleanup = null;
   const id = ++renderId;
-  renderTabbar(route.tab);
+  renderNav(route.tab);
   window.scrollTo(0, 0);
   const result = await route.view(main, params, helpers);
   // Si mientras cargaba se cambió de pantalla, se descarta esta.
@@ -130,13 +132,14 @@ async function pollUnread() {
 
 on('unread', () => {
   const active = routes.find((r) => r.re.test(currentPath()))?.tab;
-  renderTabbar(active);
+  renderNav(active);
   document.title = state.unread ? `(${state.unread}) mi nopor` : 'mi nopor';
   if (navigator.setAppBadge) (state.unread ? navigator.setAppBadge(state.unread) : navigator.clearAppBadge()).catch(() => {});
 });
 
 async function boot() {
   preventSaving(document);
+  initProtection();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
     navigator.serviceWorker.addEventListener('message', (e) => {
@@ -146,7 +149,7 @@ async function boot() {
   try {
     await refreshState();
   } catch (err) {
-    main.replaceChildren(el(html`<div class="empty"><h3>Sin conexión</h3><p>${err.message}</p><button class="btn">Reintentar</button></div>`));
+    main.replaceChildren(el(html`<div class="empty"><h3>Sin conexión.</h3><p>${err.message}</p><button class="btn">Reintentar</button></div>`));
     main.querySelector('button').addEventListener('click', () => location.reload());
     return;
   }
