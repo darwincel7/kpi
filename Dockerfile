@@ -16,8 +16,9 @@ ENV NODE_ENV=production \
     DATA_DIR=/data \
     PORT=3000
 
+# La carpeta /data debe ser un volumen persistente (docker-compose y Railway
+# lo montan ahí). No se declara aquí como volumen porque Railway no lo admite.
 RUN mkdir -p /data && chown node:node /data
-VOLUME /data
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \

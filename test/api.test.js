@@ -313,3 +313,17 @@ describe('videos', { skip: !hasFfmpeg && 'ffmpeg no está instalado' }, () => {
     assert.equal(ranged.headers.get('content-type'), 'video/mp4');
   });
 });
+
+describe('límite de intentos', () => {
+  test('los inicios de sesión correctos no se bloquean, los fallidos sí', async () => {
+    for (let i = 0; i < 25; i++) {
+      const ok = await client().json('POST', '/api/auth/login', { json: { username: 'darwin', password: 'secreto1' } });
+      assert.equal(ok.status, 200, `inicio de sesión correcto #${i + 1}`);
+    }
+    let last;
+    for (let i = 0; i < 21; i++) {
+      last = await client().json('POST', '/api/auth/login', { json: { username: 'darwin', password: 'mala' } });
+    }
+    assert.equal(last.status, 429);
+  });
+});

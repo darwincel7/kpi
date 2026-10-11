@@ -119,6 +119,8 @@ export function csrfGuard(req, res, next) {
   next();
 }
 
+// Solo cuentan los intentos fallidos: así un grupo que entra desde el mismo
+// Wi-Fi no se bloquea, pero adivinar contraseñas sigue siendo lento.
 export function rateLimit({ windowMs, max }) {
   const hits = new Map();
   setInterval(() => {
@@ -132,8 +134,10 @@ export function rateLimit({ windowMs, max }) {
       entry = { count: 0, reset: now + windowMs };
       hits.set(req.ip, entry);
     }
-    entry.count += 1;
-    if (entry.count > max) return next(new HttpError(429, 'Demasiados intentos. Espera unos minutos.'));
+    if (entry.count >= max) return next(new HttpError(429, 'Demasiados intentos. Espera unos minutos.'));
+    res.on('finish', () => {
+      if (res.statusCode >= 400) entry.count += 1;
+    });
     next();
   };
 }

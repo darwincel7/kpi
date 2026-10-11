@@ -29,6 +29,8 @@ Para los miembros que no son administradores, la app:
 
 Necesita **HTTPS** (para las notificaciones y para instalarla en el teléfono) y un **disco que no se borre** (ahí se guardan las fotos y videos).
 
+Antes de elegir proveedor, **revisa que sus términos de uso permitan contenido para adultos**. Algunos lo prohíben y pueden cerrar la cuenta.
+
 ### Opción A: Railway (la más fácil)
 
 1. Entra en [railway.com](https://railway.com) con tu cuenta de GitHub y crea un proyecto: **New Project → Deploy from GitHub repo →** elige este repositorio. Railway detecta el `Dockerfile` solo.
