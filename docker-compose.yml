@@ -1,0 +1,34 @@
+# Para un servidor propio (VPS). Uso:
+#   1. Apunta tu dominio a la IP del servidor.
+#   2. Crea un archivo .env con: DOMAIN=tudominio.com
+#   3. docker compose up -d --build
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      PUBLIC_URL: https://${DOMAIN:?Define DOMAIN en el archivo .env}
+    volumes:
+      - data:/data
+
+  # Caddy consigue el certificado HTTPS automáticamente.
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  data:
+  caddy_data:
+  caddy_config:

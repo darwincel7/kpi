@@ -1,0 +1,22 @@
+{
+  "name": "mi-nopor",
+  "version": "1.0.0",
+  "description": "Red social privada para compartir fotos y videos entre pocas personas.",
+  "private": true,
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20.9"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "express": "^5.3.0",
+    "sharp": "^0.35.5",
+    "web-push": "^3.6.7"
+  }
+}
