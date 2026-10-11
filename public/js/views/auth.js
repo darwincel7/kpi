@@ -2,14 +2,13 @@ import { api } from '../api.js';
 import { state } from '../state.js';
 import { el, html } from '../ui.js';
 
-const brand = html`<div class="brand">
-  <div class="age">18+</div>
-  <div><span class="logo">mi <b>nopor</b></span></div>
-  <p>Privado. Solo por invitación.</p>
+const brand = html`<div>
+  <div class="mark">mi nopor<i></i></div>
+  <p class="lede">Privado · Solo por invitación · +18</p>
 </div>`;
 
 function bindForm(form, submit) {
-  const error = form.querySelector('.form-error');
+  const error = form.querySelector('.error');
   const button = form.querySelector('button[type="submit"]');
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -35,11 +34,10 @@ export function loginView(main, _params, { onAuthed }) {
         <label class="field"><span>Contraseña</span>
           <input class="input" name="password" type="password" autocomplete="current-password" required />
         </label>
-        <div class="form-error"></div>
-        <button class="btn primary block" type="submit">Entrar</button>
+        <div class="error"></div>
+        <button class="btn solid block" type="submit">Entrar</button>
+        <p class="foot">¿Te invitaron? <a href="#/registro">Crea tu cuenta</a></p>
       </form>
-      <div class="switch-link">¿Te invitaron? <a href="#/registro">Crea tu cuenta</a></div>
-      <div class="fine">Contenido para adultos. Prohibido descargar, grabar o compartir.</div>
     </div>`),
   );
   const form = main.querySelector('form');
@@ -47,7 +45,6 @@ export function loginView(main, _params, { onAuthed }) {
     const { user } = await api.post('/api/auth/login', { username, password });
     await onAuthed(user);
   });
-  form.querySelector('input').focus();
 }
 
 export function registerView(main, [code], { onAuthed }) {
@@ -55,8 +52,8 @@ export function registerView(main, [code], { onAuthed }) {
   if (!state.registrationOpen) {
     main.replaceChildren(
       el(html`<div class="auth">${brand}
-        <div class="empty" style="padding:10px 0"><h3>Registro cerrado</h3><p>Pídele a un administrador que lo abra.</p>
-        <a class="btn block" href="#/entrar">Ya tengo cuenta</a></div></div>`),
+        <div><h2>El registro está cerrado.</h2>
+        <p class="foot">Pídele a quien te invitó que lo abra. <a href="#/entrar">Ya tengo cuenta</a></p></div></div>`),
     );
     return;
   }
@@ -64,13 +61,13 @@ export function registerView(main, [code], { onAuthed }) {
   main.replaceChildren(
     el(html`<div class="auth">
       ${brand}
-      <h2>${setup ? 'Crea la cuenta de administrador' : 'Crea tu cuenta'}</h2>
       <form novalidate>
-        <label class="field"><span>Nombre de usuario</span>
-          <input class="input" name="username" placeholder="ej. luna_23" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="20" required />
+        <h2>${setup ? 'Primero, tu cuenta. Serás quien administra.' : 'Crea tu cuenta.'}</h2>
+        <label class="field"><span>Usuario</span>
+          <input class="input" name="username" placeholder="luna_23" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="20" required />
         </label>
         <label class="field"><span>Contraseña</span>
-          <input class="input" name="password" type="password" placeholder="Mínimo 6 caracteres" autocomplete="new-password" required />
+          <input class="input" name="password" type="password" placeholder="mínimo 6 caracteres" autocomplete="new-password" required />
         </label>
         ${setup || invite
           ? html`<input type="hidden" name="inviteCode" value="${invite}" />`
@@ -79,12 +76,12 @@ export function registerView(main, [code], { onAuthed }) {
             </label>`}
         <label class="check">
           <input type="checkbox" name="accept" value="1" />
-          <span>Tengo 18 años o más. Me comprometo a no descargar, grabar ni compartir nada de lo que vea aquí, y a subir solo contenido de adultos que dieron su consentimiento.</span>
+          <span>Tengo 18 años o más. No voy a descargar, capturar, grabar ni compartir nada de lo que vea aquí, y solo subiré contenido de adultos que dieron su consentimiento.</span>
         </label>
-        <div class="form-error"></div>
-        <button class="btn primary block" type="submit">${setup ? 'Empezar' : 'Crear cuenta'}</button>
+        <div class="error"></div>
+        <button class="btn solid block" type="submit">${setup ? 'Empezar' : 'Crear cuenta'}</button>
+        ${setup ? '' : html`<p class="foot">¿Ya tienes cuenta? <a href="#/entrar">Entrar</a></p>`}
       </form>
-      ${setup ? '' : html`<div class="switch-link">¿Ya tienes cuenta? <a href="#/entrar">Entrar</a></div>`}
     </div>`),
   );
   const form = main.querySelector('form');
@@ -102,5 +99,4 @@ export function registerView(main, [code], { onAuthed }) {
     });
     await onAuthed(user);
   });
-  username.focus();
 }

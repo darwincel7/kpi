@@ -1,32 +1,42 @@
 import { api } from '../api.js';
+import { bindHold, guarded, holdMode } from '../protect.js';
 import { isAdmin, state } from '../state.js';
-import { avatar, confirmAction, el, html, icon, raw, sheet, timeAgo, toast, watermarkStyle } from '../ui.js';
+import { HEART, confirmAction, el, html, raw, sheet, timeAgo, toast, watermarkStyle } from '../ui.js';
 
-const VIDEO_ATTRS = raw(
+// Los administradores usan el reproductor normal. Los demás, uno sin
+// controles nativos: sin pantalla completa, sin "imagen en imagen" y sin
+// botón de descarga.
+const ADMIN_VIDEO = raw(
   'playsinline controls controlslist="nodownload noremoteplayback noplaybackrate" disablepictureinpicture disableremoteplayback',
 );
+const GUARDED_VIDEO = raw('playsinline disablepictureinpicture disableremoteplayback');
 
 function aspect(m) {
-  if (!m?.width || !m?.height) return 1;
-  // Entre 4:5 (vertical) y 16:9 (horizontal), como en las redes sociales.
+  if (!m?.width || !m?.height) return 4 / 5;
+  // Entre 4:5 (vertical) y 16:9 (horizontal).
   return Math.min(16 / 9, Math.max(4 / 5, m.width / m.height));
 }
 
 function watermark() {
-  if (isAdmin() || !state.settings?.watermark || !state.me) return '';
-  return html`<div class="wm" style="${raw(watermarkStyle(state.me.username))}"></div>`;
+  if (!guarded() || !state.settings?.watermark) return '';
+  return html`<div class="wm" style="${raw(watermarkStyle(state.me))}"></div>`;
 }
 
-function slide(m, i, { eager = false } = {}) {
+function videoMarkup(m, { lazy }) {
+  const src = m.poster ? m.src : `${m.src}#t=0.1`;
+  const preload = m.poster && lazy ? raw(`poster="${m.poster}" preload="none"`) : m.poster ? raw(`poster="${m.poster}" preload="metadata"`) : raw('preload="metadata"');
+  if (!guarded()) return html`<video src="${src}" ${preload} ${ADMIN_VIDEO}></video>`;
+  return html`<video src="${src}" ${preload} ${GUARDED_VIDEO}></video>
+    <div class="vbar"><i></i></div>
+    <span class="vplay">${holdMode() ? '' : 'Reproducir'}</span>`;
+}
+
+function slide(m, i, { lazy = true } = {}) {
   if (m.kind === 'video') {
-    const src = m.poster ? m.src : `${m.src}#t=0.1`;
-    return html`<div class="slide">
-      <video src="${src}" ${m.poster ? html`poster="${m.poster}" preload="none"` : raw('preload="metadata"')} ${VIDEO_ATTRS}></video>
-      ${watermark()}
-    </div>`;
+    return html`<div class="slide" data-video>${videoMarkup(m, { lazy })}${watermark()}</div>`;
   }
   return html`<div class="slide">
-    <img src="${m.src}" alt="" ${eager ? '' : raw('loading="lazy"')} decoding="async" draggable="false" />
+    <img src="${m.src}" alt="" ${lazy ? raw('loading="lazy"') : ''} decoding="async" draggable="false" />
     <div class="shield" data-i="${i}"></div>
     ${watermark()}
   </div>`;
@@ -34,6 +44,26 @@ function slide(m, i, { eager = false } = {}) {
 
 function trackIndex(track) {
   return Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+}
+
+const currentVideo = (track) => track.children[trackIndex(track)]?.querySelector('video') || null;
+
+// Barra de progreso y estado de los videos sin controles nativos.
+function wireGuardedVideos(root) {
+  root.querySelectorAll('.slide[data-video]').forEach((s) => {
+    const v = s.querySelector('video');
+    const bar = s.querySelector('.vbar i');
+    if (!bar) return;
+    v.addEventListener('timeupdate', () => {
+      bar.style.width = `${v.duration ? (v.currentTime / v.duration) * 100 : 0}%`;
+    });
+    v.addEventListener('play', () => s.classList.add('playing'));
+    v.addEventListener('pause', () => s.classList.remove('playing'));
+    v.addEventListener('ended', () => s.classList.remove('playing'));
+    if (!holdMode()) {
+      v.addEventListener('click', () => (v.paused ? v.play().catch(() => {}) : v.pause()));
+    }
+  });
 }
 
 function downloadUrl(url) {
@@ -46,12 +76,13 @@ function downloadUrl(url) {
 }
 
 export async function downloadMedia(media, index) {
+  if (!isAdmin()) return;
   if (media.length === 1) return downloadUrl(media[0].download);
   const choice = await sheet({
-    title: 'Descargar en calidad original',
+    title: 'Descargar original',
     options: [
-      { label: `Solo esta (${index + 1} de ${media.length})`, value: 'one', icon: 'download' },
-      { label: `Todas (${media.length})`, value: 'all', icon: 'layers' },
+      { label: `Solo esta · ${index + 1} de ${media.length}`, value: 'one' },
+      { label: `Todas · ${media.length}`, value: 'all' },
     ],
   });
   if (choice === 'one') downloadUrl(media[index].download);
@@ -72,40 +103,35 @@ document.addEventListener(
   true,
 );
 
+const commentsLabel = (n) => (n ? `${n} ${n === 1 ? 'comentario' : 'comentarios'}` : 'comentar');
+
 export function postCard(post, { detail = false, onDeleted } = {}) {
   const n = post.media.length;
+  const admin = isAdmin();
   const node = el(html`
     <article class="post" data-id="${post.id}">
       <header class="post-head">
-        <a href="#/u/${post.author.username}">${avatar(post.author)}</a>
-        <div class="who">
-          <a class="name" href="#/u/${post.author.username}">${post.author.username}</a>
-          <span class="time">${timeAgo(post.createdAt)}</span>
-        </div>
-        ${post.canDelete ? html`<button class="icon-btn" data-act="more" aria-label="Opciones">${icon('more')}</button>` : ''}
+        <a class="who" href="#/u/${post.author.username}">${post.author.username}</a>
+        <span class="when">${timeAgo(post.createdAt)}</span>
+        <span class="grow"></span>
+        ${post.canDelete ? html`<button class="more" data-act="more" aria-label="Opciones">···</button>` : ''}
       </header>
       <div class="frame protect" style="aspect-ratio:${aspect(post.media[0])}">
-        <div class="track">${post.media.map((m, i) => slide(m, i, { eager: detail && i === 0 }))}</div>
-        ${isAdmin() ? '' : html`<span class="pill lock">${icon('lock', 'xs')} No descargable</span>`}
+        <div class="track">${post.media.map((m, i) => slide(m, i, { lazy: !(detail && i === 0) }))}</div>
         ${n > 1
-          ? html`<span class="pill counter">1/${n}</span>
-              <button class="nav prev" data-nav="-1" aria-label="Anterior">${icon('back', 'sm')}</button>
-              <button class="nav next" data-nav="1" aria-label="Siguiente">${icon('back', 'sm')}</button>`
+          ? html`<button class="nav prev" data-nav="-1" aria-label="Anterior"></button>
+              <button class="nav next" data-nav="1" aria-label="Siguiente"></button>`
           : ''}
       </div>
-      ${n > 1 ? html`<div class="dots">${post.media.map((_, i) => html`<i class="${i === 0 ? 'on' : ''}"></i>`)}</div>` : ''}
-      <div class="actions">
-        <button class="icon-btn like${post.liked ? ' on' : ''}" data-act="like" aria-label="Me gusta">${icon('heart')}</button>
-        <span class="count" data-likes>${post.likeCount || ''}</span>
-        <a class="icon-btn" href="#/p/${post.id}" aria-label="Comentarios">${icon('comment')}</a>
-        <span class="count" data-comments>${post.commentCount || ''}</span>
-        <span class="spacer"></span>
-        ${isAdmin() ? html`<button class="dl-btn" data-act="download">${icon('download', 'sm')} Descargar</button>` : ''}
+      ${n > 1 ? html`<div class="reel">${post.media.map((_, i) => html`<i class="${i === 0 ? 'on' : ''}"></i>`)}</div>` : ''}
+      <div class="meta">
+        <button data-act="like" class="${post.liked ? 'liked' : ''}" aria-label="Me gusta">${HEART} <span data-likes>${post.likeCount || ''}</span></button>
+        <a href="#/p/${post.id}" data-comments>${commentsLabel(post.commentCount)}</a>
+        <span class="grow"></span>
+        ${admin ? html`<button class="dl" data-act="download">Descargar ↓</button>` : html`<span class="nodl">No descargable</span>`}
       </div>
-      ${post.caption ? html`<p class="caption"><b>${post.author.username}</b>${post.caption}</p>` : ''}
-      ${post.commentCount && !detail
-        ? html`<a class="comments-link" href="#/p/${post.id}">${post.commentCount === 1 ? 'Ver 1 comentario' : `Ver los ${post.commentCount} comentarios`}</a>`
-        : ''}
+      ${post.caption ? html`<p class="caption">${post.caption}</p>` : ''}
+      ${post.commentCount && !detail ? html`<a class="more-link" href="#/p/${post.id}">Ver ${commentsLabel(post.commentCount)} →</a>` : ''}
     </article>
   `);
 
@@ -113,16 +139,18 @@ export function postCard(post, { detail = false, onDeleted } = {}) {
   const frame = node.querySelector('.frame');
   const likeBtn = node.querySelector('[data-act="like"]');
 
+  if (guarded()) wireGuardedVideos(node);
+  bindHold(frame, {
+    onReveal: () => currentVideo(track)?.play().catch(() => {}),
+    onHide: () => track.querySelectorAll('video').forEach((v) => v.pause()),
+  });
+
   track.addEventListener(
     'scroll',
     () => {
       const i = trackIndex(track);
-      node.querySelectorAll('.dots i').forEach((d, j) => d.classList.toggle('on', i === j));
-      const counter = node.querySelector('.counter');
-      if (counter) counter.textContent = `${i + 1}/${n}`;
-      track.querySelectorAll('video').forEach((v, j) => {
-        if (j !== i) v.pause();
-      });
+      node.querySelectorAll('.reel i').forEach((d, j) => d.classList.toggle('on', i === j));
+      track.querySelectorAll('video').forEach((v, j) => j !== i && v.pause());
     },
     { passive: true },
   );
@@ -131,10 +159,7 @@ export function postCard(post, { detail = false, onDeleted } = {}) {
     if (post.liked === liked) return;
     post.liked = liked;
     post.likeCount += liked ? 1 : -1;
-    likeBtn.classList.toggle('on', liked);
-    likeBtn.classList.remove('pop');
-    void likeBtn.offsetWidth;
-    if (liked) likeBtn.classList.add('pop');
+    likeBtn.classList.toggle('liked', liked);
     node.querySelector('[data-likes]').textContent = post.likeCount || '';
     try {
       const r = await api.post(`/api/posts/${post.id}/like`, { liked });
@@ -147,34 +172,34 @@ export function postCard(post, { detail = false, onDeleted } = {}) {
 
   likeBtn.addEventListener('click', () => setLiked(!post.liked));
 
-  // Un toque abre a pantalla completa; dos toques dan "me gusta".
+  // Un toque abre el visor; dos toques dan "me gusta".
   let lastTap = 0;
   let tapTimer;
   frame.addEventListener('click', (e) => {
     const nav = e.target.closest('[data-nav]');
     if (nav) return track.scrollBy({ left: Number(nav.dataset.nav) * track.clientWidth, behavior: 'smooth' });
-    const shield = e.target.closest('.shield');
-    if (!shield) return;
+    const shieldEl = e.target.closest('.shield');
+    if (!shieldEl || frame.dataset.justHeld) return;
     const now = Date.now();
     if (now - lastTap < 300) {
       clearTimeout(tapTimer);
       lastTap = 0;
       setLiked(true);
-      const burst = el(html`<div class="heart-burst">${icon('heart')}</div>`);
+      const burst = el(html`<div class="burst">${HEART}</div>`);
       frame.append(burst);
-      setTimeout(() => burst.remove(), 850);
+      setTimeout(() => burst.remove(), 900);
     } else {
       lastTap = now;
-      tapTimer = setTimeout(() => openLightbox(post.media, Number(shield.dataset.i)), 300);
+      tapTimer = setTimeout(() => openViewer(post.media, Number(shieldEl.dataset.i)), 300);
     }
   });
 
   node.querySelector('[data-act="download"]')?.addEventListener('click', () => downloadMedia(post.media, trackIndex(track)));
 
   node.querySelector('[data-act="more"]')?.addEventListener('click', async () => {
-    const choice = await sheet({ options: [{ label: 'Eliminar publicación', value: 'delete', danger: true, icon: 'trash' }] });
+    const choice = await sheet({ options: [{ label: 'Eliminar publicación', value: 'delete', danger: true }] });
     if (choice !== 'delete') return;
-    if (!(await confirmAction('¿Eliminar publicación?', 'Se borrarán las fotos y videos para todos.', 'Eliminar'))) return;
+    if (!(await confirmAction('¿Eliminar?', 'Se borra para todos, con sus fotos y videos.', 'Eliminar'))) return;
     try {
       await api.del(`/api/posts/${post.id}`);
       node.remove();
@@ -190,47 +215,49 @@ export function postCard(post, { detail = false, onDeleted } = {}) {
 
 export function postTile(post) {
   const m = post.media[0];
-  const kindIcon = post.media.length > 1 ? icon('layers', 'sm') : m?.kind === 'video' ? icon('play', 'sm') : '';
+  const kind = post.media.length > 1 ? `×${post.media.length}` : m?.kind === 'video' ? 'video' : '';
   return el(html`
-    <a class="tile protect" href="#/p/${post.id}">
-      ${m?.thumb ? html`<img src="${m.thumb}" alt="" loading="lazy" draggable="false" />` : html`<span class="ph">${icon(m?.kind === 'video' ? 'play' : 'image')}</span>`}
-      ${kindIcon ? html`<span class="kind">${kindIcon}</span>` : ''}
+    <a class="tile protect${holdMode() ? ' thumb-veil' : ''}" href="#/p/${post.id}">
+      ${m?.thumb ? html`<img src="${m.thumb}" alt="" loading="lazy" draggable="false" />` : html`<span class="ph">${m?.kind === 'video' ? 'video' : 'foto'}</span>`}
+      ${kind ? html`<span class="kind">${kind}</span>` : ''}
     </a>
   `);
 }
 
-export function openLightbox(media, start = 0) {
+export function openViewer(media, start = 0) {
   document.querySelectorAll('video').forEach((v) => v.pause());
   const n = media.length;
+  const admin = isAdmin();
   const node = el(html`
-    <div class="lightbox protect" role="dialog">
-      <div class="lb-top">
-        <button class="icon-btn" data-act="close" aria-label="Cerrar">${icon('x')}</button>
-        ${n > 1 ? html`<span class="pill counter" style="position:static">${start + 1}/${n}</span>` : ''}
-        <span class="spacer"></span>
-        ${isAdmin() ? html`<button class="dl-btn" data-act="download">${icon('download', 'sm')} Original</button>` : ''}
+    <div class="viewer protect" role="dialog">
+      <div class="top">
+        <button data-act="close">× Cerrar</button>
+        <span class="grow"></span>
+        ${n > 1 ? html`<span data-count>${start + 1} / ${n}</span>` : ''}
+        ${admin ? html`<button data-act="download">Descargar ↓</button>` : ''}
       </div>
-      <div class="track">
-        ${media.map((m) =>
-          m.kind === 'video'
-            ? html`<div class="slide"><video src="${m.src}" ${m.poster ? html`poster="${m.poster}"` : ''} preload="metadata" ${VIDEO_ATTRS}></video>${watermark()}</div>`
-            : html`<div class="slide"><img src="${m.src}" alt="" draggable="false" /><div class="shield" style="cursor:default"></div>${watermark()}</div>`,
-        )}
-      </div>
-      ${isAdmin() ? '' : html`<div class="lb-bottom"><span class="pill">${icon('lock', 'xs')} Contenido privado · No descargable</span></div>`}
+      <div class="track">${media.map((m, i) => slide(m, i, { lazy: false }))}</div>
+      ${admin ? '' : html`<div class="bottom">Privado · No descargable</div>`}
     </div>
   `);
   const track = node.querySelector('.track');
+  node.querySelectorAll('.shield').forEach((s) => s.removeAttribute('data-i'));
   document.body.append(node);
   document.body.style.overflow = 'hidden';
   track.scrollLeft = start * track.clientWidth;
+
+  if (guarded()) wireGuardedVideos(node);
+  bindHold(node, {
+    onReveal: () => currentVideo(track)?.play().catch(() => {}),
+    onHide: () => track.querySelectorAll('video').forEach((v) => v.pause()),
+  });
 
   track.addEventListener(
     'scroll',
     () => {
       const i = trackIndex(track);
-      const counter = node.querySelector('.counter');
-      if (counter) counter.textContent = `${i + 1}/${n}`;
+      const count = node.querySelector('[data-count]');
+      if (count) count.textContent = `${i + 1} / ${n}`;
       track.querySelectorAll('video').forEach((v, j) => j !== i && v.pause());
     },
     { passive: true },
@@ -252,7 +279,7 @@ export function openLightbox(media, start = 0) {
     if (e.key === 'ArrowRight') track.scrollBy({ left: track.clientWidth, behavior: 'smooth' });
     if (e.key === 'ArrowLeft') track.scrollBy({ left: -track.clientWidth, behavior: 'smooth' });
   };
-  history.pushState({ lightbox: true }, '');
+  history.pushState({ viewer: true }, '');
   window.addEventListener('popstate', onPop);
   document.addEventListener('keydown', onKey);
   node.querySelector('[data-act="close"]').addEventListener('click', () => history.back());

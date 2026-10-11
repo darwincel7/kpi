@@ -38,6 +38,13 @@ export function createApp(config) {
   settings.setDefault('registration_open', '1');
   settings.setDefault('uploads_admin_only', '0');
   settings.setDefault('watermark', '1');
+  settings.setDefault('hold_to_view', '1');
+  // El dueño es la primera cuenta. En instalaciones anteriores a este ajuste,
+  // se toma al administrador más antiguo.
+  if (!settings.get('owner_id')) {
+    const first = db.prepare("SELECT MIN(id) AS id FROM users WHERE role = 'admin'").get();
+    if (first?.id) settings.set('owner_id', first.id);
+  }
 
   const media = createMediaStore(config.dataDir);
   const push = createPush(db, settings, config.vapidSubject);

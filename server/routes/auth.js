@@ -17,6 +17,8 @@ export function publicUser(u) {
   return { id: u.id, username: u.username, role: u.role, color: u.color, createdAt: u.created_at };
 }
 
+export const isOwner = (settings, user) => String(user.id) === settings.get('owner_id');
+
 export function authRoutes({ db, settings, push }) {
   const router = Router();
   const limiter = rateLimit({ windowMs: 15 * 60_000, max: 20 });
@@ -27,9 +29,13 @@ export function authRoutes({ db, settings, push }) {
     res.json({
       setupNeeded,
       registrationOpen: setupNeeded || settings.getBool('registration_open'),
-      user: req.user ? publicUser(req.user) : null,
+      user: req.user ? { ...publicUser(req.user), isOwner: isOwner(settings, req.user) } : null,
       settings: req.user
-        ? { uploadsAdminOnly: settings.getBool('uploads_admin_only'), watermark: settings.getBool('watermark') }
+        ? {
+            uploadsAdminOnly: settings.getBool('uploads_admin_only'),
+            watermark: settings.getBool('watermark'),
+            holdToView: settings.getBool('hold_to_view'),
+          }
         : null,
       vapidPublicKey: req.user ? push.publicKey : null,
     });
@@ -66,6 +72,7 @@ export function authRoutes({ db, settings, push }) {
       const info = db
         .prepare('INSERT INTO users (username, password_hash, role, color, created_at) VALUES (?, ?, ?, ?, ?)')
         .run(username, hash, first ? 'admin' : 'member', color, Date.now());
+      if (first) settings.set('owner_id', info.lastInsertRowid);
       return db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
     }).immediate();
 
