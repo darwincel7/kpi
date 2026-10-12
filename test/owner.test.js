@@ -77,3 +77,21 @@ test('solo el dueño nombra administradores y nadie puede tocar su cuenta', asyn
   assert.equal((await owner('PATCH', `/api/admin/users/${a.data.user.id}`, { role: 'member' })).status, 200);
   assert.equal((await ana('GET', '/api/admin')).status, 403);
 });
+
+test('cada quien puede cambiar su nombre de usuario', async () => {
+  const owner = client();
+  assert.equal((await owner('POST', '/api/auth/login', { username: 'darwin', password: 'secreto1' })).status, 200);
+
+  assert.equal((await owner('POST', '/api/auth/username', { username: 'a!' })).status, 400, 'nombre no válido');
+  assert.equal((await owner('POST', '/api/auth/username', { username: 'ANA' })).status, 409, 'nombre ocupado');
+
+  const r = await owner('POST', '/api/auth/username', { username: '@Darwin.Mejia' });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.user.username, 'darwin.mejia');
+  assert.equal(r.data.user.isOwner, true, 'sigue siendo el dueño');
+  assert.equal((await owner('GET', '/api/users/darwin.mejia')).status, 200);
+  assert.equal((await owner('GET', '/api/users/darwin')).status, 404);
+
+  assert.equal((await client()('POST', '/api/auth/login', { username: 'darwin.mejia', password: 'secreto1' })).status, 200);
+  assert.equal((await client()('POST', '/api/auth/login', { username: 'darwin', password: 'secreto1' })).status, 401);
+});
