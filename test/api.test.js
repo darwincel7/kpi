@@ -235,6 +235,17 @@ describe('interacción', () => {
     assert.equal(c.status, 201);
     const detail = await admin.json('GET', `/api/posts/${postId}`);
     assert.equal(detail.data.comments.length, 1);
+
+    // En el inicio se ven los últimos comentarios de cada publicación.
+    await admin.json('POST', `/api/posts/${postId}/comments`, { json: { body: 'segundo' } });
+    await member.json('POST', `/api/posts/${postId}/comments`, { json: { body: 'tercero' } });
+    const feed = await admin.json('GET', '/api/posts');
+    const preview = feed.data.posts[0].comments;
+    assert.deepEqual(preview.map((c) => c.body), ['segundo', 'tercero'], 'los dos últimos, en orden');
+    assert.equal(feed.data.posts[0].commentCount, 3);
+    assert.equal(preview[1].canDelete, true, 'el admin puede borrar cualquier comentario');
+    const memberFeed = await member.json('GET', '/api/posts');
+    assert.equal(memberFeed.data.posts[0].comments[0].canDelete, false, 'un miembro no borra comentarios ajenos');
     assert.equal(detail.data.post.likeCount, 1);
     const n = await admin.json('GET', '/api/notifications');
     assert.equal(n.data.notifications[0].type, 'comment');

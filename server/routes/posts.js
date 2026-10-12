@@ -5,6 +5,8 @@ import { canUpload } from './uploads.js';
 
 const PAGE_SIZE = 12;
 const MAX_FILES = 20;
+// Comentarios que se muestran debajo de cada publicación en el inicio.
+const PREVIEW_COMMENTS = 2;
 
 export function mediaJson(m, isAdmin) {
   const base = `/media/${m.id}`;
@@ -18,6 +20,16 @@ export function mediaJson(m, isAdmin) {
     thumb: m.has_thumb ? `${base}/thumb` : null,
     poster: m.has_poster ? `${base}/poster` : null,
     download: isAdmin ? `${base}/download` : null,
+  };
+}
+
+function commentJson(c, user) {
+  return {
+    id: c.id,
+    body: c.body,
+    createdAt: c.created_at,
+    author: { id: c.user_id, username: c.username, color: c.color },
+    canDelete: user.role === 'admin' || c.user_id === user.id,
   };
 }
 
@@ -48,6 +60,17 @@ export function postRoutes({ db, settings, media, push }) {
     const all = db
       .prepare(`SELECT * FROM media WHERE post_id IN (${ids.map(() => '?').join(',')}) ORDER BY position`)
       .all(...ids);
+    const marks = ids.map(() => '?').join(',');
+    // Los últimos comentarios de cada publicación, en orden de lectura.
+    const recent = db
+      .prepare(
+        `SELECT * FROM (
+           SELECT c.id, c.post_id, c.body, c.created_at, c.user_id, u.username, u.color,
+             ROW_NUMBER() OVER (PARTITION BY c.post_id ORDER BY c.id DESC) AS rn
+           FROM comments c JOIN users u ON u.id = c.user_id WHERE c.post_id IN (${marks})
+         ) WHERE rn <= ${PREVIEW_COMMENTS} ORDER BY id`,
+      )
+      .all(...ids);
     const isAdmin = user.role === 'admin';
     return rows.map((r) => ({
       id: r.id,
@@ -59,6 +82,7 @@ export function postRoutes({ db, settings, media, push }) {
       liked: !!r.liked,
       canDelete: isAdmin || r.user_id === user.id,
       media: all.filter((m) => m.post_id === r.id).map((m) => mediaJson(m, isAdmin)),
+      comments: recent.filter((c) => c.post_id === r.id).map((c) => commentJson(c, user)),
     }));
   }
 
@@ -95,13 +119,7 @@ export function postRoutes({ db, settings, media, push }) {
          FROM comments c JOIN users u ON u.id = c.user_id WHERE c.post_id = ? ORDER BY c.id`,
       )
       .all(post.id)
-      .map((c) => ({
-        id: c.id,
-        body: c.body,
-        createdAt: c.created_at,
-        author: { id: c.user_id, username: c.username, color: c.color },
-        canDelete: req.user.role === 'admin' || c.user_id === req.user.id,
-      }));
+      .map((c) => commentJson(c, req.user));
     res.json({ post, comments });
   });
 
@@ -233,13 +251,10 @@ export function postRoutes({ db, settings, media, push }) {
         .catch(() => {});
     }
     res.status(201).json({
-      comment: {
-        id: Number(lastInsertRowid),
-        body,
-        createdAt: now,
-        author: { id: req.user.id, username: req.user.username, color: req.user.color },
-        canDelete: true,
-      },
+      comment: commentJson(
+        { id: Number(lastInsertRowid), body, created_at: now, user_id: req.user.id, username: req.user.username, color: req.user.color },
+        req.user,
+      ),
     });
   });
 
