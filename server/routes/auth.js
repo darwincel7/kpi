@@ -10,6 +10,8 @@ import {
 } from '../auth.js';
 
 const USERNAME_RE = /^[a-z0-9._]{3,20}$/;
+const USERNAME_ERROR = 'El usuario debe tener de 3 a 20 caracteres: letras, números, punto o guion bajo.';
+const cleanUsername = (value) => String(value ?? '').trim().toLowerCase().replace(/^@/, '');
 // Hash de relleno para que el tiempo de respuesta no revele si existe el usuario.
 const DUMMY_HASH = await hashPassword('dummy-password');
 
@@ -42,13 +44,11 @@ export function authRoutes({ db, settings, push }) {
   });
 
   router.post('/register', limiter, async (req, res) => {
-    const username = String(req.body?.username ?? '').trim().toLowerCase().replace(/^@/, '');
+    const username = cleanUsername(req.body?.username);
     const password = String(req.body?.password ?? '');
     const code = String(req.body?.inviteCode ?? '').trim().toUpperCase();
 
-    if (!USERNAME_RE.test(username)) {
-      throw new HttpError(400, 'El usuario debe tener de 3 a 20 caracteres: letras, números, punto o guion bajo.');
-    }
+    if (!USERNAME_RE.test(username)) throw new HttpError(400, USERNAME_ERROR);
     if (password.length < 6 || password.length > 200) {
       throw new HttpError(400, 'La contraseña debe tener al menos 6 caracteres.');
     }
@@ -81,7 +81,7 @@ export function authRoutes({ db, settings, push }) {
   });
 
   router.post('/login', limiter, async (req, res) => {
-    const username = String(req.body?.username ?? '').trim().toLowerCase().replace(/^@/, '');
+    const username = cleanUsername(req.body?.username);
     const password = String(req.body?.password ?? '');
     const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
     const ok = await verifyPassword(password, user ? user.password_hash : DUMMY_HASH);
@@ -94,6 +94,18 @@ export function authRoutes({ db, settings, push }) {
   router.post('/logout', (req, res) => {
     destroySession(db, req, res);
     res.json({ ok: true });
+  });
+
+  // Cambiar el nombre de usuario. Todo lo publicado está ligado a la cuenta,
+  // no al nombre, así que se actualiza solo en toda la app.
+  router.post('/username', requireUser, limiter, (req, res) => {
+    const username = cleanUsername(req.body?.username);
+    if (!USERNAME_RE.test(username)) throw new HttpError(400, USERNAME_ERROR);
+    const taken = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(username, req.user.id);
+    if (taken) throw new HttpError(409, 'Ese nombre de usuario ya está en uso.');
+    db.prepare('UPDATE users SET username = ? WHERE id = ?').run(username, req.user.id);
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+    res.json({ user: { ...publicUser(user), isOwner: isOwner(settings, user) } });
   });
 
   router.post('/password', requireUser, limiter, async (req, res) => {

@@ -46,6 +46,10 @@ const helpers = {
     pollUnread();
     location.hash = '#/';
   },
+  onUserChanged(user) {
+    state.me = { ...state.me, ...user };
+    renderNav(routes.find((r) => r.re.test(currentPath()))?.tab);
+  },
   async onLogout() {
     if (isBusy() && !confirm('Hay una subida en curso. ¿Salir de todos modos?')) return;
     await disablePush().catch(() => {});
