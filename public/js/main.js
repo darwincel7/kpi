@@ -18,6 +18,9 @@ const routes = [
   { re: /^\/p\/(\d+)$/, view: postView },
   { re: /^\/subir$/, view: uploadView, tab: 'create' },
   { re: /^\/avisos$/, view: notificationsView, tab: 'bell' },
+  // Tu propio perfil tiene una dirección fija para que siga funcionando
+  // aunque cambies de nombre de usuario.
+  { re: /^\/yo$/, view: (main, _params, h) => profileView(main, [state.me.username], h), tab: 'me' },
   { re: /^\/u\/([a-z0-9._]+)$/, view: profileView, tab: 'me' },
   { re: /^\/ajustes$/, view: settingsView, tab: 'me' },
   { re: /^\/admin$/, view: adminView, tab: 'me', admin: true },
@@ -80,7 +83,7 @@ function renderNav(active) {
       ${tab('home', '#/', 'Inicio')}
       ${canUpload() ? tab('create', '#/subir', 'Subir') : ''}
       ${tab('bell', '#/avisos', 'Avisos', unread)}
-      ${tab('me', `#/u/${state.me.username}`, 'Yo')}
+      ${tab('me', '#/yo', 'Yo')}
     </div>`),
   );
 }
