@@ -103,9 +103,97 @@ document.addEventListener(
   true,
 );
 
-const commentsLabel = (n) => (n ? `${n} ${n === 1 ? 'comentario' : 'comentarios'}` : 'comentar');
+const commentsLabel = (n) => (n ? `${n} ${n === 1 ? 'comentario' : 'comentarios'}` : 'Comentar');
 
-export function postCard(post, { detail = false, onDeleted } = {}) {
+// Comentarios debajo de la publicación: los últimos, el resto a un toque y
+// un campo para comentar sin salir del inicio.
+function commentsSection(post, { all = null, onCount }) {
+  let list = all ?? post.comments ?? [];
+  let complete = !!all;
+  const node = el(html`<section class="talk">
+    <button class="talk-more" type="button" hidden></button>
+    <div class="talk-list"></div>
+    <form class="talk-form" autocomplete="off">
+      <input name="body" maxlength="1000" placeholder="Escribe un comentario…" enterkeyhint="send" />
+      <button type="submit" disabled>Enviar</button>
+    </form>
+  </section>`);
+  const more = node.querySelector('.talk-more');
+  const box = node.querySelector('.talk-list');
+  const form = node.querySelector('.talk-form');
+  const input = form.elements.body;
+  const send = form.querySelector('button');
+
+  const row = (c) => {
+    const r = el(html`<p class="c-row">
+      <a class="c-who" href="#/u/${c.author.username}">${c.author.username}</a>
+      <span class="c-text">${c.body}</span>
+      <span class="c-meta">${timeAgo(c.createdAt)}${c.canDelete ? html` · <button type="button" class="c-del">Borrar</button>` : ''}</span>
+    </p>`);
+    r.querySelector('.c-del')?.addEventListener('click', async () => {
+      if (!(await confirmAction('¿Borrar comentario?', '', 'Borrar'))) return;
+      try {
+        await api.del(`/api/comments/${c.id}`);
+        list = list.filter((x) => x.id !== c.id);
+        post.commentCount -= 1;
+        render();
+      } catch (err) {
+        toast(err.message, { error: true });
+      }
+    });
+    return r;
+  };
+
+  function render() {
+    box.replaceChildren(...list.map(row));
+    const hidden = post.commentCount - list.length;
+    more.hidden = complete || hidden <= 0;
+    more.textContent = post.commentCount === 1 ? 'Ver el comentario' : `Ver los ${post.commentCount} comentarios`;
+    onCount(post.commentCount);
+  }
+
+  more.addEventListener('click', async () => {
+    more.disabled = true;
+    try {
+      ({ comments: list } = await api.get(`/api/posts/${post.id}`));
+      complete = true;
+      render();
+    } catch (err) {
+      toast(err.message, { error: true });
+    } finally {
+      more.disabled = false;
+    }
+  });
+
+  input.addEventListener('input', () => {
+    send.disabled = !input.value.trim();
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = input.value.trim();
+    if (!body) return;
+    send.disabled = true;
+    input.disabled = true;
+    try {
+      const { comment } = await api.post(`/api/posts/${post.id}/comments`, { body });
+      list = [...list, comment];
+      post.commentCount += 1;
+      input.value = '';
+      render();
+    } catch (err) {
+      toast(err.message, { error: true });
+    } finally {
+      input.disabled = false;
+      send.disabled = !input.value.trim();
+    }
+  });
+
+  render();
+  return { node, focus: () => input.focus() };
+}
+
+export function postCard(post, { detail = false, comments = null, onDeleted } = {}) {
   const n = post.media.length;
   const admin = isAdmin();
   const node = el(html`
@@ -126,18 +214,25 @@ export function postCard(post, { detail = false, onDeleted } = {}) {
       ${n > 1 ? html`<div class="reel">${post.media.map((_, i) => html`<i class="${i === 0 ? 'on' : ''}"></i>`)}</div>` : ''}
       <div class="meta">
         <button data-act="like" class="${post.liked ? 'liked' : ''}" aria-label="Me gusta">${HEART} <span data-likes>${post.likeCount || ''}</span></button>
-        <a href="#/p/${post.id}" data-comments>${commentsLabel(post.commentCount)}</a>
+        <button data-act="talk" data-comments>${commentsLabel(post.commentCount)}</button>
         <span class="grow"></span>
         ${admin ? html`<button class="dl" data-act="download">Descargar ↓</button>` : html`<span class="nodl">No descargable</span>`}
       </div>
       ${post.caption ? html`<p class="caption">${post.caption}</p>` : ''}
-      ${post.commentCount && !detail ? html`<a class="more-link" href="#/p/${post.id}">Ver ${commentsLabel(post.commentCount)} →</a>` : ''}
     </article>
   `);
 
   const track = node.querySelector('.track');
   const frame = node.querySelector('.frame');
   const likeBtn = node.querySelector('[data-act="like"]');
+  const countLabel = node.querySelector('[data-comments]');
+
+  const talk = commentsSection(post, {
+    all: comments,
+    onCount: (n) => (countLabel.textContent = commentsLabel(n)),
+  });
+  node.append(talk.node);
+  countLabel.addEventListener('click', () => talk.focus());
 
   if (guarded()) wireGuardedVideos(node);
   bindHold(frame, {
