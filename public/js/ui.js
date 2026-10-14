@@ -75,14 +75,14 @@ export function toast(message, { error = false, ms = 2600 } = {}) {
 }
 
 // Hoja de opciones desde abajo. Devuelve el valor de la opción elegida o null.
-export function sheet({ title, message, options }) {
+export function sheet({ title, message, options, cancelLabel = 'Cancelar' }) {
   return new Promise((resolve) => {
     const node = el(html`
       <div class="sheet-bg">
         <div class="sheet" role="dialog">
           ${title || message ? html`<div class="head">${title ? html`<b>${title}</b>` : ''}${message ? html`<span>${message}</span>` : ''}</div>` : ''}
           ${options.map((o, i) => html`<button data-i="${i}" class="${o.danger ? 'danger' : ''}">${o.label}</button>`)}
-          <button class="cancel" data-cancel>Cancelar</button>
+          <button class="cancel" data-cancel>${cancelLabel}</button>
         </div>
       </div>
     `);
