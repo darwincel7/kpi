@@ -39,7 +39,12 @@ export function notificationRoutes({ db }) {
   router.get('/unread', (req, res) => {
     const { n } = db.prepare('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read_at IS NULL').get(req.user.id);
     const latest = db.prepare('SELECT MAX(id) AS id FROM posts').get().id || 0;
-    res.json({ count: n, latestPostId: latest });
+    // Publicaciones de otros más nuevas que la última que viste en el inicio.
+    const since = Number.parseInt(req.query.since, 10);
+    const newPosts = Number.isSafeInteger(since)
+      ? db.prepare('SELECT COUNT(*) AS n FROM posts WHERE id > ? AND user_id != ?').get(since, req.user.id).n
+      : 0;
+    res.json({ count: n, latestPostId: latest, newPosts });
   });
 
   router.post('/read', (req, res) => {

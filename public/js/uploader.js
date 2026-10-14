@@ -106,6 +106,7 @@ async function run() {
     const { post } = await api.post('/api/posts', { caption: job.caption, uploadIds: job.items.map((i) => i.uploadId) });
     job = null;
     render();
+    flash();
     toast('Publicado. Ya les avisamos a todos.');
     emit('posted', post);
   } catch (err) {
@@ -133,12 +134,31 @@ function render() {
   if (!frame) frame = requestAnimationFrame(draw);
 }
 
+// Mientras sube, la barra cuenta el proceso como un rollo de fotos.
+const STAGES = [
+  [25, 'Cargando el rollo…'],
+  [50, 'Disparando…'],
+  [75, 'Rebobinando…'],
+  [101, 'Revelando…'],
+];
+
+// Un flash de cámara cuando se publica.
+function flash() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const f = el('<div class="flash" aria-hidden="true"></div>');
+  document.body.append(f);
+  setTimeout(() => f.remove(), 800);
+}
+
+let built = null;
 function draw() {
   frame = 0;
   const bar = document.getElementById('upload-bar');
+  document.body.classList.toggle('uploading', !!job);
   if (!job) {
     bar.hidden = true;
-    bar.innerHTML = '';
+    bar.replaceChildren();
+    built = null;
     return;
   }
   bar.hidden = false;
@@ -147,26 +167,43 @@ function draw() {
   const n = job.items.length;
   let title;
   let sub;
-  let action = html`<button class="txt-btn" data-act="cancel">Cancelar</button>`;
   if (job.status === 'uploading') {
-    title = n > 1 ? `Subiendo ${job.index + 1}/${n} — ${pct}%` : `Subiendo — ${pct}%`;
-    sub = `${formatBytes(loaded)} de ${formatBytes(job.total)} · no cierres la app`;
+    title = STAGES.find(([max]) => pct < max)[1];
+    sub = `${n > 1 ? `${job.index + 1} de ${n} · ` : ''}${formatBytes(loaded)} de ${formatBytes(job.total)} · no cierres la app`;
   } else if (job.status === 'publishing') {
-    title = 'Revelando…';
-    sub = 'Preparando la publicación';
-    action = '';
+    title = 'Secando la copia…';
+    sub = 'Ya casi';
   } else {
-    title = 'No se pudo subir';
-    sub = job.error;
-    action = html`<button class="txt-btn" data-act="retry" style="color:var(--paper)">Reintentar</button>
-      <button class="txt-btn" data-act="cancel">Cancelar</button>`;
+    title = 'Se veló el rollo';
+    sub = `${job.error}. Toca Reintentar.`;
   }
-  bar.replaceChildren(
-    el(html`<div>
-      <div class="row"><div class="grow">${title}<small>${sub}</small></div>${action}</div>
-      <div class="line"><i style="width:${job.status === 'publishing' ? 100 : pct}%"></i></div>
-    </div>`),
-  );
-  bar.querySelector('[data-act="cancel"]')?.addEventListener('click', cancel);
-  bar.querySelector('[data-act="retry"]')?.addEventListener('click', run);
+
+  // La tira se arma una sola vez por estado para que la animación no se reinicie.
+  if (built !== job.status) {
+    built = job.status;
+    const action =
+      job.status === 'publishing'
+        ? ''
+        : job.status === 'error'
+          ? html`<button class="txt-btn" data-act="retry" style="color:var(--paper)">Reintentar</button>
+              <button class="txt-btn" data-act="cancel">Cancelar</button>`
+          : html`<button class="txt-btn" data-act="cancel">Cancelar</button>`;
+    bar.replaceChildren(
+      el(html`<div class="up" data-status="${job.status}">
+        <div class="row">
+          <b class="pct"><span></span><small>%</small></b>
+          <div class="grow"><span data-title></span><small data-sub></small></div>
+          ${action}
+        </div>
+        <div class="film"><i></i></div>
+      </div>`),
+    );
+    bar.querySelector('[data-act="cancel"]')?.addEventListener('click', cancel);
+    bar.querySelector('[data-act="retry"]')?.addEventListener('click', run);
+  }
+  bar.querySelector('.pct span').textContent = job.status === 'publishing' ? '100' : String(pct);
+  bar.querySelector('[data-title]').textContent = title;
+  bar.querySelector('[data-sub]').textContent = sub;
+  bar.querySelector('.film').style.setProperty('--p', `${job.status === 'publishing' ? 100 : pct}%`);
+  document.documentElement.style.setProperty('--up-h', `${bar.offsetHeight}px`);
 }

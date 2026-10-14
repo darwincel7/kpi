@@ -179,6 +179,13 @@ describe('subidas y publicaciones', () => {
 
     const unread = await member.json('GET', '/api/notifications/unread');
     assert.equal(unread.data.count, 1);
+    assert.equal((await member.json('GET', `/api/notifications/unread?since=${postId - 1}`)).data.newPosts, 1);
+    assert.equal((await member.json('GET', `/api/notifications/unread?since=${postId}`)).data.newPosts, 0);
+    assert.equal(
+      (await admin.json('GET', `/api/notifications/unread?since=${postId - 1}`)).data.newPosts,
+      0,
+      'lo que publicas tú no cuenta como nuevo',
+    );
     const list = await member.json('GET', '/api/notifications');
     assert.equal(list.data.notifications[0].type, 'post');
     assert.equal(list.data.notifications[0].photos, 1);

@@ -57,6 +57,9 @@
 
 html {
   background: var(--ink);
+  /* Sin rebote ni recarga del navegador: el inicio tiene su propio
+     "deslizar para actualizar". */
+  overscroll-behavior-y: none;
 }
 
 body {
@@ -134,6 +137,35 @@ a {
   padding-bottom: 1px;
 }
 
+/* ---------- Tira de película (cargando) ---------- */
+
+/* Perforaciones arriba y abajo y fotogramas que corren de derecha a izquierda. */
+.loading::before,
+.slide.pending::after,
+.slide.buffering::after {
+  content: '';
+  display: block;
+  width: 150px;
+  height: 26px;
+  background-color: #2a2521;
+  background-image:
+    linear-gradient(90deg, var(--ink) 0 5px, transparent 5px),
+    linear-gradient(90deg, var(--ink) 0 5px, transparent 5px),
+    linear-gradient(90deg, var(--red) 0 24px, transparent 24px 30px, #7d2a1f 30px 54px, transparent 54px);
+  background-size: 10px 3px, 10px 3px, 60px 12px;
+  background-position: 0 3px, 0 20px, 0 7px;
+  background-repeat: repeat-x;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent);
+  animation: film-run 1.1s linear infinite;
+}
+
+@keyframes film-run {
+  to {
+    background-position: -60px 3px, -60px 20px, -60px 7px;
+  }
+}
+
 /* ---------- Estructura ---------- */
 
 #view {
@@ -145,6 +177,16 @@ a {
 
 body.no-nav #view {
   padding-bottom: 0;
+}
+
+/* Mientras sube algo, la barra de subida no tapa el encabezado. */
+body.uploading #view {
+  padding-top: var(--up-h, 0px);
+}
+
+body.uploading .bar {
+  top: var(--up-h, 0px);
+  padding-top: 16px;
 }
 
 .splash {
@@ -265,6 +307,15 @@ body.no-nav #view {
   background: var(--paper);
 }
 
+#nav .dot {
+  align-self: flex-start;
+  width: 6px;
+  height: 6px;
+  margin: 18px 0 0 4px;
+  border-radius: 50%;
+  background: var(--red);
+}
+
 #nav sup {
   align-self: flex-start;
   margin: 15px 0 0 3px;
@@ -350,6 +401,57 @@ body.no-nav #view {
   object-fit: contain;
   display: block;
   background: #000;
+  transition: opacity 0.45s ease;
+}
+
+/* Cargando: luz roja de cuarto oscuro y la tira de película. */
+.slide.pending img {
+  opacity: 0;
+}
+
+.slide.pending::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(212, 65, 47, 0.2), transparent 62%);
+  animation: safelight 2.4s ease-in-out infinite;
+}
+
+.slide.pending::after,
+.slide.buffering::after {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 50%;
+  width: 120px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* Con «mantén presionado», la tira va debajo del letrero. */
+.veiled .slide.pending::after {
+  top: calc(50% + 52px);
+}
+
+@keyframes safelight {
+  50% { opacity: 0.45; }
+}
+
+/* Al llegar, la foto aparece teñida de rojo y se aclara: se revela. */
+.slide.develop::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--red);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  animation: develop 1.1s ease-out forwards;
+}
+
+@keyframes develop {
+  from { opacity: 0.75; }
+  to { opacity: 0; }
 }
 
 .protect,
@@ -388,7 +490,7 @@ body.no-nav #view {
 .veiled .slide video {
   filter: blur(34px) brightness(0.5) saturate(0.6);
   transform: scale(1.12);
-  transition: filter 0.18s ease, transform 0.18s ease;
+  transition: filter 0.18s ease, transform 0.18s ease, opacity 0.45s ease;
 }
 
 .veiled.revealed .slide img,
@@ -570,18 +672,120 @@ body.no-nav #view {
   color: var(--faint);
 }
 
-.fresh {
-  position: fixed;
-  z-index: 25;
-  top: calc(var(--safe-top) + 64px);
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 9px 14px;
-  background: var(--paper);
-  color: var(--ink);
-  font-size: 11px;
+.bar .fresh {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 11px;
+  background: var(--red);
+  color: #fff;
+  font-size: 10.5px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  white-space: nowrap;
+  animation: drop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+}
+
+.bar .fresh::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.bar .fresh:disabled {
+  background: var(--ink-3);
+  color: var(--dim);
+}
+
+.bar .fresh:disabled::before {
+  background: var(--red);
+}
+
+@keyframes drop {
+  from { opacity: 0; transform: translateY(-10px); }
+}
+
+@keyframes pulse {
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+
+.new-tag {
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--red);
+}
+
+.tile.is-new::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: 7px;
+  left: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+}
+
+/* Deslizar hacia abajo para actualizar */
+.pull {
+  position: relative;
+}
+
+.pull.settling {
+  transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+.ptr {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+  pointer-events: none;
+}
+
+/* Un anillo que se llena al jalar y se vuelve el punto rojo del logo. */
+.ptr i {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: conic-gradient(var(--red) calc(var(--p, 0) * 360deg), var(--line-2) 0);
+  -webkit-mask: radial-gradient(circle, transparent 5px, #000 5.5px);
+  mask: radial-gradient(circle, transparent 5px, #000 5.5px);
+  transition: transform 0.2s;
+}
+
+.ptr[data-mode='ready'],
+.ptr[data-mode='busy'] {
+  color: var(--paper);
+}
+
+.ptr[data-mode='ready'] i,
+.ptr[data-mode='busy'] i {
+  -webkit-mask: none;
+  mask: none;
+  background: var(--red);
+  transform: scale(0.8);
+}
+
+.ptr[data-mode='busy'] i {
+  animation: pulse 0.9s ease-in-out infinite;
 }
 
 /* ---------- Cuadrícula ---------- */
@@ -913,12 +1117,26 @@ textarea.input {
 
 #upload-bar .row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 14px;
   max-width: 560px;
   margin: 0 auto;
-  padding: 12px 18px 10px;
+  padding: 10px 18px;
   font-size: 12px;
+}
+
+#upload-bar .pct {
+  flex: none;
+  min-width: 2.4ch;
+  font: italic 400 36px/1 var(--serif);
+  color: var(--paper);
+  font-variant-numeric: tabular-nums;
+}
+
+#upload-bar .pct small {
+  margin-left: 1px;
+  font-size: 17px;
+  color: var(--dim);
 }
 
 #upload-bar .row .grow {
@@ -926,24 +1144,121 @@ textarea.input {
   min-width: 0;
 }
 
-#upload-bar .row small {
+#upload-bar [data-title] {
+  display: block;
+  color: var(--paper);
+}
+
+#upload-bar [data-sub] {
   display: block;
   margin-top: 2px;
   font-size: 11px;
   color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-#upload-bar .line {
-  height: 1px;
-  background: var(--line);
+#upload-bar [data-status='error'] [data-sub] {
+  white-space: normal;
 }
 
-#upload-bar .line i {
-  display: block;
-  height: 100%;
-  width: 0;
-  background: var(--red);
-  transition: width 0.25s;
+/* El rollo corre mientras sube; lo ya subido queda "expuesto" en rojo, con
+   una luz en el borde que avanza. */
+#upload-bar .film {
+  position: relative;
+  height: 18px;
+  overflow: hidden;
+  background: #2a2521;
+}
+
+#upload-bar .film::before,
+#upload-bar .film i {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background-image: linear-gradient(90deg, #3d3530 0 24px, transparent 24px 30px, #332c28 30px 54px, transparent 54px);
+  background-size: 60px 10px;
+  background-position: 0 4px;
+  background-repeat: repeat-x;
+  animation: film-frames 1.1s linear infinite;
+}
+
+#upload-bar .film::before {
+  right: 0;
+}
+
+#upload-bar .film i {
+  width: var(--p, 0%);
+  background-image: linear-gradient(90deg, var(--red) 0 24px, transparent 24px 30px, #a8331f 30px 54px, transparent 54px);
+  transition: width 0.3s ease;
+}
+
+#upload-bar .film i::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -1px;
+  width: 2px;
+  background: #ffe1cc;
+  box-shadow: 0 0 12px 4px rgba(255, 150, 110, 0.65);
+}
+
+#upload-bar .film::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(90deg, var(--ink-2) 0 5px, transparent 5px), linear-gradient(90deg, var(--ink-2) 0 5px, transparent 5px);
+  background-size: 10px 2px, 10px 2px;
+  background-position: 0 1px, 0 15px;
+  background-repeat: repeat-x;
+  animation: film-holes 1.1s linear infinite;
+}
+
+@keyframes film-frames {
+  to { background-position: -60px 4px; }
+}
+
+@keyframes film-holes {
+  to { background-position: -60px 1px, -60px 15px; }
+}
+
+#upload-bar [data-status='publishing'] .film::after,
+#upload-bar [data-status='publishing'] .film i {
+  animation-duration: 0.45s;
+}
+
+#upload-bar [data-status='error'] .film::after,
+#upload-bar [data-status='error'] .film::before,
+#upload-bar [data-status='error'] .film i {
+  animation-play-state: paused;
+}
+
+#upload-bar [data-status='error'] .film i {
+  filter: grayscale(1) brightness(0.6);
+}
+
+#upload-bar [data-status='error'] .film i::after {
+  display: none;
+}
+
+/* Flash de cámara al publicar */
+.flash {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: #fff;
+  pointer-events: none;
+  animation: flash 0.75s ease-out forwards;
+}
+
+@keyframes flash {
+  0% { opacity: 0; }
+  8% { opacity: 0.9; }
+  100% { opacity: 0; }
 }
 
 /* ---------- Visor ---------- */
@@ -952,9 +1267,14 @@ textarea.input {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: #000;
+  background: rgba(0, 0, 0, var(--fade, 1));
   display: flex;
   flex-direction: column;
+  animation: viewer-in 0.2s ease-out;
+}
+
+@keyframes viewer-in {
+  from { opacity: 0; }
 }
 
 .viewer .top,
@@ -964,26 +1284,27 @@ textarea.input {
   right: 0;
   z-index: 8;
   display: flex;
-  align-items: baseline;
-  gap: 16px;
-  padding: 0 18px;
+  align-items: center;
+  gap: 14px;
+  padding: 0 16px;
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  opacity: var(--fade, 1);
 }
 
 .viewer .top {
   top: 0;
-  padding-top: calc(var(--safe-top) + 16px);
-  padding-bottom: 16px;
-  background: linear-gradient(rgba(0, 0, 0, 0.7), transparent);
+  padding-top: calc(var(--safe-top) + 12px);
+  padding-bottom: 18px;
+  background: linear-gradient(rgba(0, 0, 0, 0.75), transparent);
 }
 
 .viewer .bottom {
   bottom: 0;
   justify-content: center;
   padding-bottom: calc(var(--safe-bottom) + 18px);
-  color: var(--faint);
+  color: var(--dim);
   pointer-events: none;
 }
 
@@ -991,13 +1312,83 @@ textarea.input {
   flex: 1;
 }
 
+.viewer .v-count {
+  color: var(--paper);
+}
+
+.viewer .v-dl {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(236, 230, 220, 0.5);
+  color: var(--paper);
+  letter-spacing: 0.12em;
+}
+
+/* Cerrar: un círculo claro con una X, fácil de ver sobre cualquier foto. */
+.viewer .v-close {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.55);
+  transition: transform 0.15s;
+}
+
+.viewer .v-close::before,
+.viewer .v-close::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 2px;
+  background: var(--ink);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.viewer .v-close::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.viewer .v-close:active {
+  transform: scale(0.88);
+}
+
 .viewer .track {
   flex: 1;
+  /* De lado lo maneja el carrusel; hacia arriba o abajo, el gesto de cerrar. */
+  touch-action: pan-x;
+  animation: viewer-zoom 0.26s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+@keyframes viewer-zoom {
+  from { transform: scale(0.94); }
+}
+
+.viewer.settling .track {
+  transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+.viewer.leaving .track {
+  transition-timing-function: ease-in;
+  transition-duration: 0.2s;
+}
+
+.viewer.settling,
+.viewer.settling .top,
+.viewer.settling .bottom {
+  transition: background-color 0.24s, opacity 0.24s;
 }
 
 .viewer .slide img,
 .viewer .slide video {
   background: transparent;
+}
+
+.viewer:not(.revealed) .veil-hint {
+  opacity: var(--fade, 1);
 }
 
 /* ---------- Comentarios ---------- */
@@ -1375,16 +1766,20 @@ textarea.input {
 }
 
 .loading {
-  padding: 60px 18px;
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 64px 18px;
   font-size: 10.5px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--faint);
-  animation: blink 1.4s steps(2) infinite;
+  color: var(--dim);
+  animation: blink 1.4s ease-in-out infinite;
 }
 
+/* Solo parpadea el texto; la tira sigue corriendo. */
 @keyframes blink {
-  50% { opacity: 0.35; }
+  50% { color: var(--faint); }
 }
 
 /* ---------- Hoja de opciones y mensajes ---------- */
@@ -1497,6 +1892,22 @@ body.shielded .notif .thumb {
 
 body.shielded #cover {
   display: grid;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading::before,
+  .slide.pending::after,
+  .slide.buffering::after,
+  .slide.pending::before,
+  #upload-bar .film::before,
+  #upload-bar .film::after,
+  #upload-bar .film i,
+  .viewer,
+  .viewer .track,
+  .bar .fresh,
+  .bar .fresh::before {
+    animation: none;
+  }
 }
 
 @media print {

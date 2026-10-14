@@ -1,40 +1,60 @@
 import { api } from '../api.js';
 import { enablePush, isIos, isStandalone, pushStatus } from '../push.js';
-import { canUpload, on, state, storageGet, storageSet } from '../state.js';
+import { pullToRefresh } from '../pull.js';
+import { canUpload, on, setFeedTop, state, storageGet, storageSet } from '../state.js';
 import { el, html, toast } from '../ui.js';
 import { postCard, postTile } from './post-card.js';
 
 const loading = () => el('<div class="loading">Revelando…</div>');
 
 // Lista paginada de publicaciones, como lista o cuadrícula. También la usa el perfil.
-export function postList(container, { user, mode = 'list', emptyNode }) {
+export function postList(container, { user, mode = 'list', emptyNode, onTop }) {
   let cursor = null;
   let busy = false;
   let done = false;
   let topId = 0;
+  let loaded = false;
+  // Cambia cada vez que se actualiza, para descartar páginas que llegan tarde.
+  let gen = 0;
   const holder = el(mode === 'grid' ? '<div class="grid"></div>' : '<div class="feed"></div>');
   const sentinel = el('<div></div>');
   sentinel.append(loading());
   container.replaceChildren(holder, sentinel);
 
+  const item = (p, isNew) => (mode === 'grid' ? postTile(p, { isNew }) : postCard(p, { isNew }));
+  const query = (before) => {
+    const qs = new URLSearchParams();
+    if (before) qs.set('before', before);
+    if (user) qs.set('user', user);
+    return api.get(`/api/posts?${qs}`);
+  };
+
+  function setTop(posts) {
+    loaded = true;
+    topId = posts[0]?.id || 0;
+    onTop?.(topId);
+  }
+
+  function finish() {
+    sentinel.replaceChildren();
+    if (!holder.children.length && emptyNode) sentinel.append(emptyNode);
+    else if (mode === 'list' && holder.children.length) sentinel.append(el('<div class="end">— Fin del rollo —</div>'));
+  }
+
   async function loadMore() {
     if (busy || done) return;
     busy = true;
+    const g = gen;
     try {
-      const qs = new URLSearchParams();
-      if (cursor) qs.set('before', cursor);
-      if (user) qs.set('user', user);
-      const { posts, nextCursor } = await api.get(`/api/posts?${qs}`);
-      if (!cursor && posts[0]) topId = posts[0].id;
-      for (const p of posts) holder.append(mode === 'grid' ? postTile(p) : postCard(p));
+      const { posts, nextCursor } = await query(cursor);
+      if (g !== gen) return;
+      if (!cursor) setTop(posts);
+      for (const p of posts) holder.append(item(p, false));
       cursor = nextCursor;
       done = !nextCursor;
-      if (done) {
-        sentinel.replaceChildren();
-        if (!holder.children.length && emptyNode) sentinel.append(emptyNode);
-        else if (mode === 'list' && holder.children.length) sentinel.append(el('<div class="end">— Fin del rollo —</div>'));
-      }
+      if (done) finish();
     } catch (err) {
+      if (g !== gen) return;
       sentinel.replaceChildren(el(html`<div class="empty"><p>${err.message}</p><button class="btn small">Reintentar</button></div>`));
       sentinel.querySelector('button').addEventListener('click', () => {
         sentinel.replaceChildren(loading());
@@ -45,14 +65,38 @@ export function postList(container, { user, mode = 'list', emptyNode }) {
     }
   }
 
+  // Trae lo más reciente sin vaciar la pantalla. Devuelve cuántas
+  // publicaciones de otros llegaron desde la última vez.
+  async function refresh() {
+    const before = topId;
+    const known = loaded;
+    const g = ++gen;
+    const { posts, nextCursor } = await query(null);
+    if (g !== gen) return 0;
+    const isNew = (p) => known && p.id > before && p.author.id !== state.me?.id;
+    holder.replaceChildren(...posts.map((p) => item(p, isNew(p))));
+    setTop(posts);
+    cursor = nextCursor;
+    done = !nextCursor;
+    busy = false;
+    if (done) finish();
+    else {
+      sentinel.replaceChildren(loading());
+      io.unobserve(sentinel);
+      io.observe(sentinel);
+    }
+    return posts.filter(isNew).length;
+  }
+
   const io = new IntersectionObserver((entries) => entries[0].isIntersecting && loadMore(), { rootMargin: '1200px' });
   io.observe(sentinel);
   loadMore();
   return {
-    get topId() {
-      return topId;
+    refresh,
+    destroy: () => {
+      gen++;
+      io.disconnect();
     },
-    destroy: () => io.disconnect(),
   };
 }
 
@@ -90,16 +134,24 @@ export function feedView(main) {
       <header class="bar">
         <a href="#/" class="mark" data-act="top">mi nopor<i></i></a>
         <span class="grow"></span>
+        <button class="fresh" data-act="fresh" type="button" hidden></button>
+        <span class="grow"></span>
         <button class="txt-btn" data-act="mode"></button>
       </header>
-      <div data-slot="banner"></div>
-      <div data-slot="list"></div>
+      <div class="pull" data-slot="pull">
+        <div class="ptr" aria-hidden="true"><i></i><span></span></div>
+        <div data-slot="banner"></div>
+        <div data-slot="list"></div>
+      </div>
     </div>`),
   );
   const modeBtn = main.querySelector('[data-act="mode"]');
+  const freshBtn = main.querySelector('[data-act="fresh"]');
   const slot = main.querySelector('[data-slot="list"]');
   let list;
-  let fresh;
+  let refreshing = false;
+  // Si la actualización viene del botón de arriba, el botón muestra el progreso.
+  let fromPill = false;
 
   const empty = () =>
     el(html`<div class="empty">
@@ -109,12 +161,40 @@ export function feedView(main) {
     </div>`);
 
   function load() {
-    fresh?.remove();
-    fresh = null;
     list?.destroy();
     modeBtn.textContent = mode === 'grid' ? 'Lista' : 'Cuadrícula';
-    list = postList(slot, { mode, emptyNode: empty() });
+    list = postList(slot, { mode, emptyNode: empty(), onTop: setFeedTop });
   }
+
+  // Arriba se indica cuántas publicaciones nuevas hay sin ver.
+  function paintFresh() {
+    const n = state.newPosts;
+    const busy = refreshing && fromPill;
+    freshBtn.hidden = !n && !busy;
+    freshBtn.disabled = busy;
+    freshBtn.textContent = busy ? 'Revelando…' : n === 1 ? '1 nueva ↑' : `${n} nuevas ↑`;
+  }
+
+  async function refresh({ quiet = false, pill = false } = {}) {
+    if (refreshing) return;
+    refreshing = true;
+    fromPill = pill;
+    paintFresh();
+    try {
+      const added = await list.refresh();
+      if (!quiet) toast(added ? (added === 1 ? '1 publicación nueva' : `${added} publicaciones nuevas`) : 'Ya estás al día');
+    } catch (err) {
+      toast(err.message, { error: true });
+    } finally {
+      refreshing = false;
+      paintFresh();
+    }
+  }
+
+  const toTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    refresh({ pill: true });
+  };
 
   modeBtn.addEventListener('click', () => {
     mode = mode === 'grid' ? 'list' : 'grid';
@@ -123,30 +203,27 @@ export function feedView(main) {
   });
   main.querySelector('[data-act="top"]').addEventListener('click', (e) => {
     e.preventDefault();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    load();
+    toTop();
   });
+  freshBtn.addEventListener('click', toTop);
 
   load();
+  paintFresh();
   pushBanner(main.querySelector('[data-slot="banner"]'));
 
+  const offPull = pullToRefresh(main.querySelector('[data-slot="pull"]'), main.querySelector('.ptr'), () => refresh());
+  const offHome = on('home-tap', toTop);
+  const offUnread = on('unread', paintFresh);
   const offPosted = on('posted', () => {
     window.scrollTo({ top: 0 });
-    load();
-  });
-  const offUnread = on('unread', () => {
-    if (fresh || !list.topId || state.latestPostId <= list.topId) return;
-    fresh = el('<button class="fresh">Hay algo nuevo ↑</button>');
-    fresh.addEventListener('click', () => {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      load();
-    });
-    main.append(fresh);
+    refresh({ quiet: true });
   });
 
   return () => {
     list?.destroy();
-    offPosted();
+    offPull();
+    offHome();
     offUnread();
+    offPosted();
   };
 }
