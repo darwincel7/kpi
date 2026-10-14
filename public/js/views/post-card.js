@@ -35,7 +35,7 @@ function slide(m, i, { lazy = true } = {}) {
   if (m.kind === 'video') {
     return html`<div class="slide" data-video>${videoMarkup(m, { lazy })}${watermark()}</div>`;
   }
-  return html`<div class="slide">
+  return html`<div class="slide pending">
     <img src="${m.src}" alt="" ${lazy ? raw('loading="lazy"') : ''} decoding="async" draggable="false" />
     <div class="shield" data-i="${i}"></div>
     ${watermark()}
@@ -47,6 +47,31 @@ function trackIndex(track) {
 }
 
 const currentVideo = (track) => track.children[trackIndex(track)]?.querySelector('video') || null;
+
+// Mientras carga, cada foto se ve como en el cuarto oscuro: luz roja y una
+// tira de película corriendo. Al llegar, se «revela».
+function wireLoading(root) {
+  root.querySelectorAll('.slide.pending img').forEach((img) => {
+    const s = img.closest('.slide');
+    const done = (ok) => {
+      s.classList.remove('pending');
+      if (ok && !reducedMotion()) {
+        s.classList.add('develop');
+        setTimeout(() => s.classList.remove('develop'), 1100);
+      }
+    };
+    if (img.complete && img.naturalWidth) return s.classList.remove('pending');
+    img.addEventListener('load', () => done(true), { once: true });
+    img.addEventListener('error', () => done(false), { once: true });
+  });
+  root.querySelectorAll('.slide[data-video] video').forEach((v) => {
+    const s = v.closest('.slide');
+    v.addEventListener('waiting', () => s.classList.add('buffering'));
+    for (const type of ['playing', 'pause', 'canplay', 'error']) v.addEventListener(type, () => s.classList.remove('buffering'));
+  });
+}
+
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // Barra de progreso y estado de los videos sin controles nativos.
 function wireGuardedVideos(root) {
@@ -193,7 +218,7 @@ function commentsSection(post, { all = null, onCount }) {
   return { node, focus: () => input.focus() };
 }
 
-export function postCard(post, { detail = false, comments = null, onDeleted } = {}) {
+export function postCard(post, { detail = false, comments = null, onDeleted, isNew = false } = {}) {
   const n = post.media.length;
   const admin = isAdmin();
   const node = el(html`
@@ -201,6 +226,7 @@ export function postCard(post, { detail = false, comments = null, onDeleted } = 
       <header class="post-head">
         <a class="who" href="#/u/${post.author.username}">${post.author.username}</a>
         <span class="when">${timeAgo(post.createdAt)}</span>
+        ${isNew ? html`<span class="new-tag">Nuevo</span>` : ''}
         <span class="grow"></span>
         ${post.canDelete ? html`<button class="more" data-act="more" aria-label="Opciones">···</button>` : ''}
       </header>
@@ -234,6 +260,7 @@ export function postCard(post, { detail = false, comments = null, onDeleted } = 
   node.append(talk.node);
   countLabel.addEventListener('click', () => talk.focus());
 
+  wireLoading(node);
   if (guarded()) wireGuardedVideos(node);
   bindHold(frame, {
     onReveal: () => currentVideo(track)?.play().catch(() => {}),
@@ -308,11 +335,11 @@ export function postCard(post, { detail = false, comments = null, onDeleted } = 
   return node;
 }
 
-export function postTile(post) {
+export function postTile(post, { isNew = false } = {}) {
   const m = post.media[0];
   const kind = post.media.length > 1 ? `×${post.media.length}` : m?.kind === 'video' ? 'video' : '';
   return el(html`
-    <a class="tile protect${holdMode() ? ' thumb-veil' : ''}" href="#/p/${post.id}">
+    <a class="tile protect${holdMode() ? ' thumb-veil' : ''}${isNew ? ' is-new' : ''}" href="#/p/${post.id}">
       ${m?.thumb ? html`<img src="${m.thumb}" alt="" loading="lazy" draggable="false" />` : html`<span class="ph">${m?.kind === 'video' ? 'video' : 'foto'}</span>`}
       ${kind ? html`<span class="kind">${kind}</span>` : ''}
     </a>
@@ -324,15 +351,15 @@ export function openViewer(media, start = 0) {
   const n = media.length;
   const admin = isAdmin();
   const node = el(html`
-    <div class="viewer protect" role="dialog">
+    <div class="viewer protect" role="dialog" aria-modal="true">
       <div class="top">
-        <button data-act="close">× Cerrar</button>
+        ${n > 1 ? html`<span class="v-count" data-count>${start + 1} / ${n}</span>` : ''}
         <span class="grow"></span>
-        ${n > 1 ? html`<span data-count>${start + 1} / ${n}</span>` : ''}
-        ${admin ? html`<button data-act="download">Descargar ↓</button>` : ''}
+        ${admin ? html`<button class="v-dl" data-act="download">Descargar ↓</button>` : ''}
+        <button class="v-close" data-act="close" aria-label="Cerrar"></button>
       </div>
       <div class="track">${media.map((m, i) => slide(m, i, { lazy: false }))}</div>
-      ${admin ? '' : html`<div class="bottom">Privado · No descargable</div>`}
+      <div class="bottom">${admin ? '' : 'No descargable · '}Desliza ↕ para cerrar</div>
     </div>
   `);
   const track = node.querySelector('.track');
@@ -341,6 +368,7 @@ export function openViewer(media, start = 0) {
   document.body.style.overflow = 'hidden';
   track.scrollLeft = start * track.clientWidth;
 
+  wireLoading(node);
   if (guarded()) wireGuardedVideos(node);
   bindHold(node, {
     onReveal: () => currentVideo(track)?.play().catch(() => {}),
@@ -367,16 +395,85 @@ export function openViewer(media, start = 0) {
     window.removeEventListener('popstate', onPop);
     document.removeEventListener('keydown', onKey);
   };
-  // El botón "atrás" del teléfono cierra el visor en lugar de salir.
+  // Cierra con el historial para que el botón "atrás" del teléfono y el de
+  // la app hagan lo mismo; si el navegador no avisa, se cierra igual.
+  let leaving = false;
+  const leave = () => {
+    if (leaving) return;
+    leaving = true;
+    history.back();
+    setTimeout(close, 600);
+  };
   const onPop = () => close();
   const onKey = (e) => {
-    if (e.key === 'Escape') history.back();
+    if (e.key === 'Escape') leave();
     if (e.key === 'ArrowRight') track.scrollBy({ left: track.clientWidth, behavior: 'smooth' });
     if (e.key === 'ArrowLeft') track.scrollBy({ left: -track.clientWidth, behavior: 'smooth' });
   };
   history.pushState({ viewer: true }, '');
   window.addEventListener('popstate', onPop);
   document.addEventListener('keydown', onKey);
-  node.querySelector('[data-act="close"]').addEventListener('click', () => history.back());
+  node.querySelector('[data-act="close"]').addEventListener('click', leave);
   node.querySelector('[data-act="download"]')?.addEventListener('click', () => downloadMedia(media, trackIndex(track)));
+
+  // Deslizar hacia arriba o hacia abajo cierra. De lado se pasan las fotos.
+  let drag = null;
+  let swallowClick = false;
+  const fade = (dy) => node.style.setProperty('--fade', String(Math.max(0, 1 - Math.abs(dy) / 420)));
+  const settle = () => {
+    node.classList.add('settling');
+    track.style.transform = '';
+    node.style.removeProperty('--fade');
+    setTimeout(() => node.classList.remove('settling'), 260);
+  };
+  const dismiss = (dir) => {
+    node.classList.add('settling', 'leaving');
+    track.style.transform = `translateY(${dir * window.innerHeight}px)`;
+    node.style.setProperty('--fade', '0');
+    setTimeout(leave, 200);
+  };
+
+  track.addEventListener('pointerdown', (e) => {
+    if (!e.isPrimary || closed) return;
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), dy: 0, on: false };
+  });
+  track.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.x;
+    const dy = e.clientY - drag.y;
+    if (!drag.on) {
+      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) drag = null;
+      if (!drag || Math.abs(dy) < 10 || Math.abs(dy) < Math.abs(dx)) return;
+      drag.on = true;
+      node.classList.add('dragging');
+      track.setPointerCapture?.(e.pointerId);
+    }
+    drag.dy = dy;
+    track.style.transform = `translateY(${dy}px) scale(${1 - Math.min(Math.abs(dy) / 1600, 0.12)})`;
+    fade(dy);
+  });
+  const release = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const { on, dy, t } = drag;
+    drag = null;
+    if (!on) return;
+    node.classList.remove('dragging');
+    swallowClick = true;
+    setTimeout(() => (swallowClick = false), 80);
+    const speed = Math.abs(dy) / Math.max(1, performance.now() - t);
+    if (e.type === 'pointerup' && (Math.abs(dy) > 110 || (speed > 0.5 && Math.abs(dy) > 30))) dismiss(Math.sign(dy));
+    else settle();
+  };
+  track.addEventListener('pointerup', release);
+  track.addEventListener('pointercancel', release);
+  // El toque que termina un deslizamiento no debe pausar ni reproducir el video.
+  node.addEventListener(
+    'click',
+    (e) => {
+      if (!swallowClick) return;
+      e.stopPropagation();
+      e.preventDefault();
+    },
+    true,
+  );
 }
