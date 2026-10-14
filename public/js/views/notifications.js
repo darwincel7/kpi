@@ -1,5 +1,6 @@
 import { api } from '../api.js';
 import { holdMode } from '../protect.js';
+import { pushToggle } from '../push-toggle.js';
 import { emit, state } from '../state.js';
 import { el, html, timeAgo } from '../ui.js';
 
@@ -14,10 +15,11 @@ function describe(n) {
 export async function notificationsView(main) {
   main.replaceChildren(
     el(html`<div>
-      <header class="bar"><h1>Avisos</h1></header>
+      <header class="bar"><h1>Avisos</h1><span data-slot="push"></span></header>
       <div data-slot="list"><div class="loading">Revelando…</div></div>
     </div>`),
   );
+  main.querySelector('[data-slot="push"]').replaceWith(pushToggle());
   const slot = main.querySelector('[data-slot="list"]');
   try {
     const { notifications } = await api.get('/api/notifications');

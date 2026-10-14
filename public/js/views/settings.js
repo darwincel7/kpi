@@ -1,15 +1,8 @@
 import { api } from '../api.js';
-import { disablePush, enablePush, isIos, isStandalone, pushStatus } from '../push.js';
+import { isIos, isStandalone } from '../push.js';
+import { pushToggle } from '../push-toggle.js';
 import { isAdmin, state } from '../state.js';
 import { el, html, toast } from '../ui.js';
-
-const STATUS_TEXT = {
-  on: 'Activados en este dispositivo.',
-  off: 'Desactivados en este dispositivo.',
-  denied: 'Bloqueados. Permítelos en los ajustes del navegador.',
-  'needs-install': 'En iPhone, primero instala la app (abajo).',
-  unsupported: 'Este navegador no permite avisos.',
-};
 
 export function settingsView(main, _params, { onLogout, onUserChanged }) {
   const ios = isIos();
@@ -34,10 +27,10 @@ export function settingsView(main, _params, { onLogout, onUserChanged }) {
 
         <section class="section">
           <header><span class="num">02</span><h3>Avisos</h3></header>
-          <label class="row">
-            <span class="grow">Avisos en este teléfono<small data-slot="push-status">…</small></span>
-            <input type="checkbox" class="switch" data-act="push" aria-label="Avisos" disabled />
-          </label>
+          <div class="row">
+            <span class="grow">Avisos en este teléfono<small>Toca el botón para activarlos o desactivarlos.</small></span>
+            <span data-slot="push"></span>
+          </div>
         </section>
 
         ${isStandalone()
@@ -72,29 +65,7 @@ export function settingsView(main, _params, { onLogout, onUserChanged }) {
 
   main.querySelector('[data-act="back"]').addEventListener('click', () => history.back());
 
-  const toggle = main.querySelector('[data-act="push"]');
-  const statusText = main.querySelector('[data-slot="push-status"]');
-  async function refreshPush() {
-    const status = await pushStatus().catch(() => 'unsupported');
-    statusText.textContent = STATUS_TEXT[status];
-    toggle.checked = status === 'on';
-    toggle.disabled = status !== 'on' && status !== 'off';
-  }
-  toggle.addEventListener('change', async () => {
-    toggle.disabled = true;
-    try {
-      if (toggle.checked) {
-        await enablePush();
-        toast('Avisos activados');
-      } else {
-        await disablePush();
-      }
-    } catch (err) {
-      toast(err.message, { error: true });
-    }
-    refreshPush();
-  });
-  refreshPush();
+  main.querySelector('[data-slot="push"]').replaceWith(pushToggle());
 
   const nameForm = main.querySelector('[data-slot="username"]');
   const nameInput = nameForm.elements.username;

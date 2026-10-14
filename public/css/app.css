@@ -1083,6 +1083,44 @@ textarea.input {
 
 /* ---------- Avisos ---------- */
 
+.push-toggle {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.push-toggle::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+}
+
+.push-toggle.on {
+  color: var(--paper);
+  border-color: var(--paper);
+}
+
+.push-toggle.on::before {
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.push-toggle:disabled {
+  opacity: 0.5;
+}
+
 .notif {
   display: flex;
   align-items: center;
