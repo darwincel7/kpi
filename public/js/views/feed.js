@@ -1,19 +1,22 @@
 import { api } from '../api.js';
 import { enablePush, isIos, isStandalone, pushStatus } from '../push.js';
 import { pullToRefresh } from '../pull.js';
-import { canUpload, on, setFeedTop, state, storageGet, storageSet } from '../state.js';
+import { canUpload, feedTop, on, setFeedTop, state, storageGet, storageSet } from '../state.js';
 import { el, html, toast } from '../ui.js';
 import { postCard, postTile } from './post-card.js';
 
 const loading = () => el('<div class="loading">Revelando…</div>');
 
 // Lista paginada de publicaciones, como lista o cuadrícula. También la usa el perfil.
-export function postList(container, { user, mode = 'list', emptyNode, onTop }) {
+// `seen` es la última publicación que ya se vio: lo de otros que sea más
+// nuevo se marca como «Nuevo», también en las páginas siguientes.
+export function postList(container, { user, mode = 'list', emptyNode, onTop, seen = null }) {
   let cursor = null;
   let busy = false;
   let done = false;
   let topId = 0;
   let loaded = false;
+  let boundary = seen;
   // Cambia cada vez que se actualiza, para descartar páginas que llegan tarde.
   let gen = 0;
   const holder = el(mode === 'grid' ? '<div class="grid"></div>' : '<div class="feed"></div>');
@@ -21,7 +24,8 @@ export function postList(container, { user, mode = 'list', emptyNode, onTop }) {
   sentinel.append(loading());
   container.replaceChildren(holder, sentinel);
 
-  const item = (p, isNew) => (mode === 'grid' ? postTile(p, { isNew }) : postCard(p, { isNew }));
+  const isNew = (p) => boundary !== null && p.id > boundary && p.author.id !== state.me?.id;
+  const item = (p) => (mode === 'grid' ? postTile(p, { isNew: isNew(p) }) : postCard(p, { isNew: isNew(p) }));
   const query = (before) => {
     const qs = new URLSearchParams();
     if (before) qs.set('before', before);
@@ -49,7 +53,7 @@ export function postList(container, { user, mode = 'list', emptyNode, onTop }) {
       const { posts, nextCursor } = await query(cursor);
       if (g !== gen) return;
       if (!cursor) setTop(posts);
-      for (const p of posts) holder.append(item(p, false));
+      for (const p of posts) holder.append(item(p));
       cursor = nextCursor;
       done = !nextCursor;
       if (done) finish();
@@ -73,8 +77,8 @@ export function postList(container, { user, mode = 'list', emptyNode, onTop }) {
     const g = ++gen;
     const { posts, nextCursor } = await query(null);
     if (g !== gen) return 0;
-    const isNew = (p) => known && p.id > before && p.author.id !== state.me?.id;
-    holder.replaceChildren(...posts.map((p) => item(p, isNew(p))));
+    if (known) boundary = before;
+    holder.replaceChildren(...posts.map(item));
     setTop(posts);
     cursor = nextCursor;
     done = !nextCursor;
@@ -163,7 +167,7 @@ export function feedView(main) {
   function load() {
     list?.destroy();
     modeBtn.textContent = mode === 'grid' ? 'Lista' : 'Cuadrícula';
-    list = postList(slot, { mode, emptyNode: empty(), onTop: setFeedTop });
+    list = postList(slot, { mode, emptyNode: empty(), onTop: setFeedTop, seen: feedTop() });
   }
 
   // Arriba se indica cuántas publicaciones nuevas hay sin ver.
@@ -181,7 +185,9 @@ export function feedView(main) {
     fromPill = pill;
     paintFresh();
     try {
-      const added = await list.refresh();
+      // La página trae hasta 12; si llegaron más, vale la cuenta del servidor.
+      const pending = state.newPosts;
+      const added = Math.max(await list.refresh(), pending);
       if (!quiet) toast(added ? (added === 1 ? '1 publicación nueva' : `${added} publicaciones nuevas`) : 'Ya estás al día');
     } catch (err) {
       toast(err.message, { error: true });
